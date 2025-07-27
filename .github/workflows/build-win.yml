@@ -1,0 +1,109 @@
+name: (Windows x64) Release Build, Draft & Upload NekosMediaPlayer
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-upload-windows:
+    if: github.event.pull_request.merged == true || github.event_name == 'push'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 21
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Get Version from package.json
+        id: get_version
+        shell: pwsh
+        run: |
+          $version = (node -p 'require("./package.json").version')
+          Write-Host "Extracted version: $version"
+          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$version"
+      
+      - name: Build Electron App
+        run: |
+          npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist folder
+        run: Get-ChildItem -Recurse dist
+        shell: pwsh
+
+      - name: Generate Release Notes
+        id: generate_release_notes
+        uses: release-drafter/release-drafter@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          version: ${{ env.VERSION }}
+          name: "NekosMediaPlayer ${{ env.VERSION }}"
+          tag: ${{ env.VERSION }}
+          prerelease: true
+          header: "## Release Notes for NekosMediaPlayer ${{ env.VERSION }}"
+
+      - name: Save Release Notes
+        run: |
+          echo "${{ steps.generate_release_notes.outputs.body }}" > release_notes.txt
+
+      - name: Install mc (MinIO Client) on Windows
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://dl.min.io/client/mc/release/windows-amd64/mc.exe" -OutFile "mc.exe"
+        
+      - name: Configure mc alias (Windows)
+        shell: powershell
+        run: |
+          .\mc.exe alias set myminio "${{ secrets.MINIO_ENDPOINT }}" "${{ secrets.AWS_ACCESS_KEY }}" "${{ secrets.AWS_SECRET_KEY }}"
+        
+      - name: Upload MSI and EXE Installers
+        shell: powershell
+        run: |
+          $targetPath = "myminio/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/"
+          .\mc.exe cp "dist/NekosMediaPlayer-Setup-${{ env.VERSION }}.msi" "$targetPath"
+          .\mc.exe cp "dist/NekosMediaPlayer-Setup-${{ env.VERSION }}.exe" "$targetPath"
+        
+      - name: Upload Release Notes to MinIO
+        shell: powershell
+        run: |
+          .\mc.exe cp release_notes.txt myminio/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/release_notes.txt
+
+      - name: Send Release Info to Discord
+        shell: pwsh
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          $releaseNotes = Get-Content release_notes.txt -Raw
+          $jsonPayload = @{
+            username = "NekosMediaPlayer Bot"
+            avatar_url = "https://cdn.discordapp.com/icons/1310653602951594024/cb8a2781368442a92b33dd2cb93b3afd.webp?size=512"
+            content = "<@&1384262560395559122> **New Release (WINDOWS)**"
+            embeds = @(
+              @{
+                title = "New Release: v${{ env.VERSION }}}"
+                description = "$releaseNotes`n`n[Download EXE FILE](https://uploadminioger1.nekosunevr.co.uk/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/NekosMediaPlayer-Setup-${{ env.VERSION }}.exe) | [Download MSI FILE](https://uploadminioger1.nekosunevr.co.uk/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/NekosMediaPlayer-Setup-${{ env.VERSION }}.msi)"
+                color = 16776960
+                footer = @{
+                  text = "Released by GitHub Actions"
+                }
+                timestamp = (Get-Date).ToString("o")
+              }
+            )
+          } | ConvertTo-Json -Depth 10
+
+          Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK -Method Post -ContentType 'application/json' -Body $jsonPayload
