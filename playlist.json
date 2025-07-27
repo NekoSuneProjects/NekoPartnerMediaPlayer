@@ -2,6 +2,7 @@
   "playlists": [
     {
       "name": "NekoSuneVR Musics",
+      "cover": "https://cdn.discordapp.com/avatars/100463282099326976/a_a1a893c94c1e8e3258ec2f2b370e7486.gif?size=1024&animated=true",
       "Songs": [
         {
           "Artist": "NekoSuneVR",
@@ -37,6 +38,7 @@
     },
     {
       "name": "FumikoEcho Musics",
+      "cover": "https://cdn.discordapp.com/avatars/916242679724126218/1f213165ce69da6b77ac76a1b9a4af97.webp?size=1024",
       "Songs": [
         {
           "Artist": "FumikoEcho",

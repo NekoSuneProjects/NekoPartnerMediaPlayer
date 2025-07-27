@@ -115,7 +115,10 @@
                 type: DataTypes.STRING,
                 allowNull: false,
                 unique: true
-            }
+            },
+            cover: {
+                type: DataTypes.STRING
+            },
         });
 
         const Song = sequelize.define('Song', {
@@ -231,7 +234,7 @@
         // Initialize Database and Sync with JSON API
         async function initializeDatabase() {
             try {
-                await sequelize.sync({ force: false });
+                await sequelize.sync({ force: true });
                 console.log('Database synced');
 
                 // Fetch playlist data from JSON API
@@ -272,7 +275,7 @@
                     let playlist = await Playlist.findOne({ where: { name: playlistData.name } });
                     if (!playlist) {
                         console.log(`Creating playlist: ${playlistData.name}`);
-                        playlist = await Playlist.create({ name: playlistData.name });
+                        playlist = await Playlist.create({ name: playlistData.name, cover: playlistData.cover });
                     } else {
                         console.log(`Found existing playlist: ${playlistData.name}`);
                     }
