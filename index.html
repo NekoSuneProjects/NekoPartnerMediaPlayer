@@ -221,7 +221,7 @@
                 console.log('Database synced');
 
                 // Fetch playlist data from JSON API
-                const apiUrl = 'playlist.json'; // Replace with your API URL
+                const apiUrl = 'https://raw.githubusercontent.com/NekoSuneProjects/NekoPartnerMediaPlayer/refs/heads/main/playlist.json'; // Replace with your API URL
                 const response = await fetch(apiUrl);
                 if (!response.ok) {
                     throw new Error(`API request failed: ${response.status} ${response.statusText}`);
