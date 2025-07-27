@@ -1,0 +1,64 @@
+{
+  "playlists": [
+    {
+      "name": "NekoSuneVR Musics",
+      "cover": "https://cdn.discordapp.com/avatars/100463282099326976/a_a1a893c94c1e8e3258ec2f2b370e7486.gif?size=1024&animated=true",
+      "Songs": [
+        {
+          "Artist": "NekoSuneVR",
+          "title": "Samurai Butterfly (Frenchcore Remix)",
+          "cover": "https://i.ytimg.com/vi/wMIksAvYh5Q/maxresdefault.jpg",
+          "youtubeid": "wMIksAvYh5Q"
+        },
+        {
+          "Artist": "NekoSuneVR",
+          "title": "Virtual Unity",
+          "cover": "https://i.ytimg.com/vi/YSQroJCOckA/maxresdefault.jpg",
+          "youtubeid": "YSQroJCOckA"
+        },
+        {
+          "Artist": "NekoSuneVR",
+          "title": "Crossfire Kings",
+          "cover": "https://i.ytimg.com/vi/cZeZPiOGx6I/maxresdefault.jpg",
+          "youtubeid": "cZeZPiOGx6I"
+        },
+        {
+          "Artist": "NekoSuneVR",
+          "title": "Wasteland Protocol",
+          "cover": "https://i.ytimg.com/vi/6gtyjHAGAbY/maxresdefault.jpg",
+          "youtubeid": "6gtyjHAGAbY"
+        },
+        {
+          "Artist": "NekoSuneVR",
+          "title": "Tenno Rise",
+          "cover": "https://i.ytimg.com/vi/BJNj0lUjo4g/maxresdefault.jpg",
+          "youtubeid": "BJNj0lUjo4g"
+        }
+      ]
+    },
+    {
+      "name": "FumikoEcho Musics",
+      "cover": "https://cdn.discordapp.com/avatars/916242679724126218/1f213165ce69da6b77ac76a1b9a4af97.webp?size=1024",
+      "Songs": [
+        {
+          "Artist": "FumikoEcho",
+          "title": "Crossfire Queens",
+          "cover": "https://i.ytimg.com/vi/fNmYn6-ifkA/maxresdefault.jpg",
+          "youtubeid": "fNmYn6-ifkA"
+        },
+        {
+          "Artist": "FumikoEcho",
+          "title": "FumikoFoxgirl Chaos Mode",
+          "cover": "https://i.ytimg.com/vi/fEtUq9l_P3s/maxresdefault.jpg",
+          "youtubeid": "fEtUq9l_P3s"
+        },
+        {
+          "Artist": "FumikoEcho",
+          "title": "Chaos Protocol",
+          "cover": "https://i.ytimg.com/vi/14B4OPOOnc8/maxresdefault.jpg",
+          "youtubeid": "14B4OPOOnc8"
+        }        
+      ]
+    }
+  ]
+}
