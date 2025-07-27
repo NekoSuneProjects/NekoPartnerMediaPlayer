@@ -9,6 +9,8 @@ function createWindow() {
             contextIsolation: false
         }
     });
+
+    win.setMenu(null);
     win.loadFile('index.html');
     // Disable Ctrl+R, F5, Ctrl+F5 globally
     globalShortcut.register('CommandOrControl+R', () => { });
