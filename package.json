@@ -3,8 +3,14 @@
   "version": "1.0.0",
   "main": "main.js",
   "build": {
-    "appId": "com.nekosune.nekosmediaplayer",
+    "appId": "com.nekosunevr.nekosmediaplayer",
     "productName": "NekosMediaPlayer",
+    "copyright": "Copyright © 2025 NekoSuneVR",
+    "nsis": {
+      "allowToChangeInstallationDirectory": true,
+      "license": "license.txt",
+      "oneClick": false
+    },
     "directories": {
       "output": "dist"
     },
@@ -18,7 +24,18 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "target": [
+        "nsis",
+        "msi"
+      ]
+    },
+    "appx": {
+      "backgroundColor": "#ffffff",
+      "displayName": "NekosMediaPlayer",
+      "publisher": "CN=NekoSuneVR",
+      "publisherDisplayName": "NekoSuneVR",
+      "identityName": "com.nekosunevr.nekosmediaplayer"
     },
     "linux": {
       "target": ["AppImage", "deb"],
@@ -39,7 +56,7 @@
   },
   "keywords": [],
   "author": "NekoSuneVR",
-  "license": "ISC",
+  "license": "MIT",
   "description": "",
   "dependencies": {
     "sequelize": "^6.37.7",
