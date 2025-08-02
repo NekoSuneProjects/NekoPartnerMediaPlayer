@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NekoSune Partner Media Player</title>
+    <title>NekoSuneVR Media Player</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
 </head>
@@ -72,7 +72,6 @@
     <script>
         const { app, shell, ipcRenderer } = require('electron');
         
-        const youtubedl = require('youtube-dl-exec');
         const { Sequelize, DataTypes } = require('sequelize');
         const path = require('path');
         const fs = require('fs');
@@ -158,68 +157,6 @@
         let sponsorBlockInterval = null;
         let isPlayerReady = false;
 
-        // Fetch Video Metadata using youtube-dl-exec
-        async function fetchVideoMetadata(videoId) {
-            try {
-                const output = await youtubedl(`https://www.youtube.com/watch?v=${videoId}`, {
-                    dumpSingleJson: true,
-                    noWarnings: true,
-                    noCallHome: true,
-                    noCheckCertificate: true,
-                    preferFreeFormats: true,
-                    youtubeSkipDashManifest: true,
-                    referer: 'https://www.youtube.com'
-                });
-                return {
-                    views: output.view_count ? output.view_count.toString() : 'N/A',
-                    likes: output.like_count ? output.like_count.toString() : 'N/A'
-                };
-            } catch (error) {
-                console.error(`Error fetching metadata for video ${videoId}:`, error);
-                return { views: 'N/A', likes: 'N/A' };
-            }
-        }
-
-        // Update Metadata in Background
-        async function updateMetadataInBackground() {
-            const songs = [];
-            for (const playlist of playlists) {
-                for (const song of playlist.Songs) {
-                    songs.push({ id: song.id, youtubeid: song.youtubeid });
-                }
-            }
-            console.log(`Starting background metadata update for ${songs.length} songs`);
-
-            for (const song of songs) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                try {
-                    console.log(`Fetching metadata for song ID ${song.id} (${song.youtubeid})`);
-                    const metadata = await fetchVideoMetadata(song.youtubeid);
-                    const songRecord = await Song.findByPk(song.id);
-                    if (songRecord) {
-                        songRecord.views = metadata.views;
-                        songRecord.likes = metadata.likes;
-                        await songRecord.save();
-                        console.log(`Updated metadata for song ID ${song.id}: Views=${metadata.views}, Likes=${metadata.likes}`);
-
-                        // Update currentPlaylist if the song is in it
-                        const currentSongIndex = currentPlaylist.findIndex(s => s.id === song.id);
-                        if (currentSongIndex !== -1) {
-                            currentPlaylist[currentSongIndex].views = metadata.views;
-                            currentPlaylist[currentSongIndex].likes = metadata.likes;
-                            if (currentSongIndex === currentTrackIndex) {
-                                updateNowPlaying();
-                            }
-                            updateSongList();
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Failed to update metadata for song ID ${song.id}:`, error);
-                }
-            }
-            console.log('Background metadata update completed');
-        }
-
         window.addEventListener('keydown', (e) => {
             if (
                 e.key === 'F5' ||
@@ -238,7 +175,7 @@
                 console.log('Database synced');
 
                 // Fetch playlist data from JSON API
-                const apiUrl = 'https://raw.githubusercontent.com/NekoSuneProjects/NekoPartnerMediaPlayer/refs/heads/main/playlist.json'; // Replace with your API URL
+                const apiUrl = 'https://mediaplayer.nekosunevr.co.uk/api/playlists';
                 const response = await fetch(apiUrl);
                 if (!response.ok) {
                     throw new Error(`API request failed: ${response.status} ${response.statusText}`);
