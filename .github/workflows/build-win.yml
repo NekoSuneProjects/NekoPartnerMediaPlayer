@@ -95,7 +95,7 @@ jobs:
             content = "<@&1384262560395559122> **New Release (WINDOWS)**"
             embeds = @(
               @{
-                title = "New Release: v${{ env.VERSION }}}"
+                title = "New Release: v${{ env.VERSION }}"
                 description = "$releaseNotes`n`n[Download EXE FILE](https://uploadminioger1.nekosunevr.co.uk/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/NekosMediaPlayer-Setup-${{ env.VERSION }}.exe) | [Download MSI FILE](https://uploadminioger1.nekosunevr.co.uk/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/NekosMediaPlayer-Setup-${{ env.VERSION }}.msi)"
                 color = 16776960
                 footer = @{

@@ -1,6 +1,6 @@
 {
   "name": "nekosmediaplayer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "main.js",
   "build": {
     "appId": "com.nekosunevr.nekosmediaplayer",
@@ -17,12 +17,7 @@
     "files": [
       "**/*"
     ],
-    "extraResources": [
-      {
-        "from": "playlists.db",
-        "to": "playlists.db"
-      }
-    ],
+    "extraResources": [],
     "win": {
       "icon": "icon.ico",
       "artifactName": "${productName}-Setup-${version}.${ext}",
@@ -39,11 +34,22 @@
       "identityName": "com.nekosunevr.nekosmediaplayer"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
-      "category": "AudioVideo"
+      "target": [
+        "AppImage",
+        "flatpak",
+        "snap",
+        "deb",
+        "rpm",
+        "tar.gz"
+      ],
+      "category": "AudioVideo",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.music"
     }
   },
@@ -52,6 +58,7 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
+    "build:linux-all": "electron-builder --linux --armv7l --arm64 --x64",
     "build:mac": "electron-builder --mac",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
