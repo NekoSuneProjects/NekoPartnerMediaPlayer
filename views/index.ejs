@@ -12,6 +12,7 @@
       <h1 class="text-2xl font-bold">NekoSuneVR Media Player</h1>
       <nav class="space-x-4">
         <a href="/" class="hover:underline">Home</a>
+        <a href="/mediaplayer" class="hover:underline">MediaPlayer</a>
         <a href="/admin/login" class="hover:underline">Admin</a>
       </nav>
     </div>
@@ -19,25 +20,29 @@
 
   <main class="container mx-auto px-4 py-8">
     <section class="mb-12 text-center">
-      <h2 class="text-3xl font-bold mb-4">Welcome to the NekoSuneVR</h2>
+      <h2 class="text-3xl font-bold mb-4">Welcome to the NekoSuneVR MediaPlayer</h2>
       <p class="text-gray-400">Explore playlists and featured tracks from our artists and partners.</p>
     </section>
 
-    <section class="space-y-8">
-      <!-- Example static card structure -->
-      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-          <img src="https://i.ytimg.com/vi/EYsv9qfHE7c/maxresdefault.jpg" alt="Cover" class="w-full h-48 object-cover">
-          <div class="p-4">
-            <h3 class="text-xl font-semibold">Samurai Butterfly</h3>
-            <p class="text-gray-400">by NekoSuneVR</p>
-            <p class="text-sm text-gray-500 mt-2">Views: 100K | Likes: 8K</p>
-            <a href="https://www.youtube.com/watch?v=EYsv9qfHE7c" target="_blank" class="inline-block mt-4 text-blue-400 hover:underline">Watch on YouTube</a>
+    <section class="space-y-12">
+      <% playlists.forEach(function(playlist) { %>
+        <div class="space-y-4">
+          <h3 class="text-2xl font-bold"><%= playlist.name %></h3>
+          <div class="flex space-x-4 overflow-x-auto pb-2">
+            <% playlist.Songs.forEach(function(song) { %>
+              <div class="flex-shrink-0 bg-gray-800 rounded-lg shadow-lg w-72">
+                <img src="<%= song.cover %>" alt="Cover" class="w-full h-40 object-cover">
+                <div class="p-4">
+                  <h4 class="text-lg font-semibold"><%= song.title %></h4>
+                  <p class="text-gray-400">by <%= song.Artist %></p>
+                  <p class="text-sm text-gray-500 mt-2">Views: <%= song.views || 'N/A' %> | Likes: <%= song.likes || 'N/A' %></p>
+                  <a href="https://www.youtube.com/watch?v=<%= song.youtubeid %>" target="_blank" class="inline-block mt-2 text-blue-400 hover:underline">Watch on YouTube</a>
+                </div>
+              </div>
+            <% }); %>
           </div>
         </div>
-
-        <!-- Repeat more song cards dynamically from your backend if templated -->
-      </div>
+      <% }); %>
     </section>
   </main>
 

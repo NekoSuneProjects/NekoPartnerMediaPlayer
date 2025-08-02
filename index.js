@@ -68,8 +68,18 @@ async function updateAllStatsInBackground() {
 }
 setInterval(updateAllStatsInBackground, 30 * 1000);
 
-app.get('/', (req, res) => {
-    res.render('index'); // assuming index.ejs is in views/
+app.get('/', async (req, res) => {
+    const playlists = await Playlist.findAll({
+        include: {
+            model: Song,
+            as: 'Songs'
+        }
+    });
+    res.render('index', { playlists }); // assuming index.ejs is in views/
+});
+
+app.get('/mediaplayer', async (req, res) => {
+    res.render('mediaplayer'); // assuming index.ejs is in views/
 });
 
 // Admin Auth Middleware
