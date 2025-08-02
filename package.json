@@ -45,6 +45,55 @@
       "category": "AudioVideo",
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
+    "flatpak": {
+      "synopsis": "Media Player for integrated experiences",
+      "description": "NekosMediaPlayer is a modern multimedia player with VRChat and streaming integration.",
+      "license": "MIT",
+      "branch": "stable",
+      "category": "AudioVideo",
+      "developerName": "NekoSuneVR",
+      "runtime": "org.freedesktop.Platform",
+      "runtimeVersion": "22.08",
+      "sdk": "org.freedesktop.Sdk",
+      "base": "io.github.electron",
+      "baseVersion": "22.08",
+      "finishArgs": [
+        "--share=network",
+        "--socket=x11",
+        "--socket=wayland",
+        "--filesystem=host"
+      ]
+    },
+    "armv7l": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "category": "AudioVideo"
+    },
+    "arm64": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "snap",
+        "tar.gz"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "category": "AudioVideo"
+    },
+    "x64": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "snap",
+        "tar.gz"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "category": "AudioVideo"
+    },
     "mac": {
       "target": [
         "dmg",
@@ -58,7 +107,7 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
-    "build:linux-all": "electron-builder --linux --armv7l --arm64 --x64",
+    "build:linux-all": "electron-builder --arm64 --armv7l --x64",
     "build:mac": "electron-builder --mac",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
