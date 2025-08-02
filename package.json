@@ -61,8 +61,7 @@
   "description": "",
   "dependencies": {
     "sequelize": "^6.37.7",
-    "sqlite3": "^5.1.7",
-    "youtube-dl-exec": "^3.0.22"
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "electron": "^37.2.4",
