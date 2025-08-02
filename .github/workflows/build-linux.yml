@@ -1,0 +1,111 @@
+name: (Linux x64/ARM) Release Build, Draft & Upload NekosMediaPlayer
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+on:
+  push:
+    branches:
+      - RELEASE
+
+jobs:
+  build-and-upload-linux:
+    if: github.event.pull_request.merged == true || github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 21
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Get Version from package.json
+        id: get_version
+        run: echo "VERSION=$(node -p 'require(\"./package.json\").version')" >> $GITHUB_ENV
+
+      - name: Enable QEMU for Cross Architecture Builds
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      - name: Build Electron App for All Linux Targets and Architectures
+        run: npm run build:linux-all
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist folder
+        run: ls -R dist
+
+      - name: Install mc (MinIO Client)
+        run: |
+          curl -O https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x mc
+          sudo mv mc /usr/local/bin/mc
+
+      - name: Configure mc alias
+        run: mc alias set myminio "${{ secrets.MINIO_ENDPOINT }}" "${{ secrets.AWS_ACCESS_KEY }}" "${{ secrets.AWS_SECRET_KEY }}"
+
+      - name: Upload All Linux Builds
+        run: |
+          TARGET_PATH="myminio/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/"
+          for file in dist/*; do
+            mc cp "$file" "$TARGET_PATH"
+          done
+
+      - name: Upload Release Notes to MinIO
+        run: mc cp release_notes.txt "myminio/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}/release_notes.txt"
+
+      - name: Send Release Info to Discord (Linux)
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          RELEASE_NOTES=$(cat release_notes.txt)
+          BASE_URL="https://uploadminioger1.nekosunevr.co.uk/nekosunetools/nekosmediaplayer/releases/${{ env.VERSION }}"
+    
+          LINKS=""
+          for file in dist/*; do
+            FILENAME=$(basename "$file")
+
+            # Handle special case for .tar.gz
+            if [[ "$FILENAME" == *.tar.gz ]]; then
+              EXT="tar.gz"
+            else
+              EXT="${FILENAME##*.}"
+            fi
+
+            # Only include allowed file types
+            if [[ "$EXT" == "AppImage" || "EXT" == "flatpak" || "$EXT" == "deb" || "$EXT" == "rpm" || "$EXT" == "snap" || "$EXT" == "tar.gz" ]]; then
+              LINKS+="• [$FILENAME]($BASE_URL/$FILENAME)\n"
+            fi
+          done
+
+          JSON_PAYLOAD=$(jq -n \
+            --arg content "<@&1384262560395559122> **New Release (LINUX ALL ARCHES)**" \
+            --arg title "New Release: v${{ env.VERSION }}" \
+            --arg description "$RELEASE_NOTES\n\n**Available Artifacts:**\n$LINKS" \
+            --argjson color 65280 \
+            --arg footer "Released by GitHub Actions" \
+            --arg timestamp "$(date --iso-8601=seconds)" \
+          '{
+            username: "NekosMediaPlayer Bot",
+            avatar_url: "https://cdn.discordapp.com/icons/1310653602951594024/cb8a2781368442a92b33dd2cb93b3afd.webp?size=512",
+            content: $content,
+            embeds: [{
+              title: $title,
+              description: $description,
+              color: $color,
+              footer: { text: $footer },
+              timestamp: $timestamp
+            }]
+          }')
+          curl -H "Content-Type: application/json" -d "$JSON_PAYLOAD" "$DISCORD_WEBHOOK"
+
