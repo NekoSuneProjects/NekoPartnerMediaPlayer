@@ -18,10 +18,6 @@
       "**/*"
     ],
     "extraResources": [
-      {
-        "from": "playlists.db",
-        "to": "playlists.db"
-      }
     ],
     "win": {
       "icon": "icon.ico",
