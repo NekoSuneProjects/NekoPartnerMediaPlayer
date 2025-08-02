@@ -51,7 +51,6 @@
       "license": "MIT",
       "branch": "stable",
       "category": "AudioVideo",
-      "developerName": "NekoSuneVR",
       "runtime": "org.freedesktop.Platform",
       "runtimeVersion": "22.08",
       "sdk": "org.freedesktop.Sdk",
@@ -84,7 +83,7 @@
   "keywords": [],
   "author": "NekoSuneVR",
   "license": "MIT",
-  "description": "",
+  "description": "A modern media player for Music and streaming environments.",
   "dependencies": {
     "sequelize": "^6.37.7",
     "sqlite3": "^5.1.7"
