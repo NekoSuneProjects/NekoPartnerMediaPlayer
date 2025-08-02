@@ -1,6 +1,6 @@
 {
   "name": "nekosmediaplayer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "main.js",
   "build": {
     "appId": "com.nekosunevr.nekosmediaplayer",
