@@ -82,7 +82,7 @@ async function updateAllStatsInBackground() {
     }
 }
 
-setInterval(updateAllStatsInBackground, 10 * 60 * 1000);
+setInterval(updateAllStatsInBackground, 60 * 1000);
 
 app.get('/', async (req, res) => {
     const playlists = await Playlist.findAll({
