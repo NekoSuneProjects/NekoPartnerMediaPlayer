@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
+const Queue = require('queue-fifo');
 const Redis = require('ioredis');
 const { Sequelize, Op, DataTypes } = require('sequelize');
 const youtubedl = require('youtube-dl-exec');
@@ -11,7 +12,16 @@ const bcrypt = require('bcrypt');
 const { Playlist, Song, User, sequelize } = require('./models');
 
 const COOLDOWN_MS = 30 * 1000; // 30 seconds between updates
+const youtubeQueue = new Queue();
+const inQueueSet = new Set(); // Track what's already queued
+let isWorkerRunning = false;
 
+const Bottleneck = require('bottleneck');
+
+const limiter = new Bottleneck({
+    minTime: 30 * 1000,    // 30 seconds between jobs
+    maxConcurrent: 1       // Only one job at a time
+});
 
 // Helper to sleep for cooldown
 function sleep(ms) {
@@ -61,6 +71,49 @@ async function fetchYouTubeStats(youtubeid) {
     }
 }
 
+async function enqueueOutdatedSongs() {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+    const songs = await Song.findAll({
+        where: { updatedAt: { [Op.lt]: cutoff } }
+    });
+
+    for (const song of songs) {
+        if (!inQueueSet.has(song.youtubeid)) {
+            youtubeQueue.enqueue(song.youtubeid);
+            inQueueSet.add(song.youtubeid);
+            console.log(`[QUEUE] Enqueued ${song.youtubeid}`);
+        }
+    }
+}
+
+
+async function processYouTubeID(youtubeid) {
+    try {
+        console.log(`[WORKER] Processing ${youtubeid}`);
+        const stats = await fetchYouTubeStats(youtubeid);
+
+        await redis.set(`ytstats:${youtubeid}`, JSON.stringify(stats), 'EX', 600);
+        await Song.update({
+            views: stats.views,
+            likes: stats.likes,
+            updatedAt: new Date()
+        }, { where: { youtubeid } });
+
+        console.log(`[WORKER] Done: ${youtubeid}`);
+    } catch (err) {
+        console.error(`[WORKER] Error processing ${youtubeid}:`, err);
+    } finally {
+        inQueueSet.delete(youtubeid); // Allow it to be re-queued later
+    }
+}
+
+function feedLimiter() {
+    if (!youtubeQueue.isEmpty()) {
+        const youtubeid = youtubeQueue.dequeue();
+        limiter.schedule(() => processYouTubeID(youtubeid));
+    }
+}
+
 // Background updater to sync stats into database every minute
 async function updateAllStatsInBackground() {
     try {
@@ -82,7 +135,8 @@ async function updateAllStatsInBackground() {
     }
 }
 
-setInterval(updateAllStatsInBackground, 60 * 1000);
+//setInterval(updateAllStatsInBackground, 60 * 1000);
+setInterval(feedLimiter, 5000);
 
 app.get('/', async (req, res) => {
     const playlists = await Playlist.findAll({
