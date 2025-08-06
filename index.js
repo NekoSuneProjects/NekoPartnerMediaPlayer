@@ -10,6 +10,14 @@ const bcrypt = require('bcrypt');
 
 const { Playlist, Song, User, sequelize } = require('./models');
 
+const COOLDOWN_MS = 30 * 1000; // 30 seconds between updates
+
+
+// Helper to sleep for cooldown
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const redis = new Redis({
@@ -56,17 +64,25 @@ async function fetchYouTubeStats(youtubeid) {
 // Background updater to sync stats into database every minute
 async function updateAllStatsInBackground() {
     try {
-        const songs = await Song.findAll();
+        const cutoff = new Date(Date.now() - 10 * 60 * 1000); // 12 hours ago
+        const songs = await Song.findAll({
+            where: {
+                updatedAt: { [Op.lt]: cutoff }
+            }
+        });
         for (const song of songs) {
             const stats = await fetchYouTubeStats(song.youtubeid);
             await redis.set(`ytstats:${song.youtubeid}`, JSON.stringify(stats), 'EX', 60);
             await Song.update({ views: stats.views, likes: stats.likes }, { where: { youtubeid: song.youtubeid } });
+            console.log(`[${new Date().toISOString()}] Updated stats for ${song.youtubeid}. Waiting ${COOLDOWN_MS / 1000}s...`);
+            await sleep(COOLDOWN_MS);
         }
     } catch (err) {
         console.error('Background stats update failed:', err);
     }
 }
-setInterval(updateAllStatsInBackground, 30 * 1000);
+
+setInterval(updateAllStatsInBackground, 10 * 60 * 1000);
 
 app.get('/', async (req, res) => {
     const playlists = await Playlist.findAll({
