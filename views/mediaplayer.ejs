@@ -146,39 +146,33 @@
             const merged = playlistsData.map((incomingPlaylist) => {
                 const existing = stored.find(p => p.name === incomingPlaylist.name); // match by name or ID
 
-                if (!existing) return incomingPlaylist; // New playlist entirely
+                if (!existing) return incomingPlaylist; // Entirely new playlist
 
                 const existingSongMap = new Map(existing.Songs.map(song => [song.youtubeid, song]));
 
-               const mergedSongs = incomingPlaylist.Songs.map(song => {
+                // Strict match: keep only songs that exist in incoming list
+                const syncedSongs = incomingPlaylist.Songs.map(song => {
                     const existingSong = existingSongMap.get(song.youtubeid);
-
-                    if (!existingSong) return song; // New song
-
-                    // Return latest details from incoming + preserved metadata
                     return {
-                        ...song, // New title, artist, cover, etc.
-                        views: existingSong.views ?? song.views,
-                        likes: existingSong.likes ?? song.likes
+                        ...song, // Latest details from API
+                        views: existingSong?.views ?? song.views,
+                        likes: existingSong?.likes ?? song.likes
                     };
                 });
 
-                // Include any leftover songs only in old storage (in case they were deleted in source but you want to keep them)
-                const extraSongs = existing.Songs.filter(song => !mergedSongs.some(s => s.youtubeid === song.youtubeid));
-
                 return {
-                    ...incomingPlaylist, // Keep updated name/cover for playlist itself
-                    Songs: [...mergedSongs, ...extraSongs]
+                    ...incomingPlaylist, // Updated name/cover/etc.
+                    Songs: syncedSongs // Strict sync: excludes deleted songs
                 };
             });
 
-            // Add brand-new playlists from localStorage if not in incoming
-            const newPlaylistNames = new Set(playlistsData.map(p => p.name));
-            const extraPlaylists = stored.filter(p => !newPlaylistNames.has(p.name));
+            // Also remove playlists that no longer exist in the API response
+            const apiPlaylistNames = new Set(playlistsData.map(p => p.name));
+            const finalPlaylists = merged.filter(p => apiPlaylistNames.has(p.name));
 
-            const finalPlaylists = [...merged, ...extraPlaylists];
             localStorage.setItem('playlists', JSON.stringify(finalPlaylists));
         }
+
 
         // Update metadata in background
         async function updateMetadataInBackground() {
