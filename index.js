@@ -135,7 +135,7 @@ async function updateAllStatsInBackground() {
     }
 }
 
-//setInterval(updateAllStatsInBackground, 60 * 1000);
+setInterval(enqueueOutdatedSongs, 60 * 1000);
 setInterval(feedLimiter, 5000);
 
 app.get('/', async (req, res) => {
