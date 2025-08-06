@@ -103,35 +103,41 @@
             const stored = JSON.parse(localStorage.getItem('playlists') || '[]');
 
             const merged = playlistsData.map((incomingPlaylist) => {
-                const existing = stored.find(p => p.name === incomingPlaylist.name); // match by name or id if you have one
+                const existing = stored.find(p => p.name === incomingPlaylist.name); // match by name or ID
 
-                if (!existing) return incomingPlaylist;
+                if (!existing) return incomingPlaylist; // New playlist entirely
 
                 const existingSongMap = new Map(existing.Songs.map(song => [song.youtubeid, song]));
 
-                const mergedSongs = incomingPlaylist.Songs.map(song => {
+               const mergedSongs = incomingPlaylist.Songs.map(song => {
                     const existingSong = existingSongMap.get(song.youtubeid);
-                    return existingSong
-                        ? { ...song, views: existingSong.views ?? song.views, likes: existingSong.likes ?? song.likes }
-                        : song;
+
+                    if (!existingSong) return song; // New song
+
+                    // Return latest details from incoming + preserved metadata
+                    return {
+                        ...song, // New title, artist, cover, etc.
+                        views: existingSong.views ?? song.views,
+                        likes: existingSong.likes ?? song.likes
+                    };
                 });
 
-                // Include any songs that were in existing but not in incoming (to avoid accidental removal)
+                // Include any leftover songs only in old storage (in case they were deleted in source but you want to keep them)
                 const extraSongs = existing.Songs.filter(song => !mergedSongs.some(s => s.youtubeid === song.youtubeid));
+
                 return {
-                    ...incomingPlaylist,
+                    ...incomingPlaylist, // Keep updated name/cover for playlist itself
                     Songs: [...mergedSongs, ...extraSongs]
                 };
             });
 
-            // Add any playlists that exist in localStorage but not in the new data
+            // Add brand-new playlists from localStorage if not in incoming
             const newPlaylistNames = new Set(playlistsData.map(p => p.name));
             const extraPlaylists = stored.filter(p => !newPlaylistNames.has(p.name));
-            const finalPlaylists = [...merged, ...extraPlaylists];
 
+            const finalPlaylists = [...merged, ...extraPlaylists];
             localStorage.setItem('playlists', JSON.stringify(finalPlaylists));
         }
-
 
         // Update metadata in background
         async function updateMetadataInBackground() {
