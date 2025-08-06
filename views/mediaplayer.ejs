@@ -250,7 +250,7 @@
                     throw new Error(`API request failed: ${response.status} ${response.statusText}`);
                 }
                 const apiData = await response.json();
-                console.log('API data fetched:', JSON.stringify(apiData, null, 2));
+                //console.log('API data fetched:', JSON.stringify(apiData, null, 2));
 
                 // Validate API data
                 if (!apiData.playlists || !Array.isArray(apiData.playlists)) {
