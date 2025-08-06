@@ -70,9 +70,6 @@
     </div>
 
     <script>
-        // YouTube Data API key (replace with your own key)
-        const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY';
-
         // Sample playlist data as fallback
         const fallbackPlaylists = [
             {
@@ -103,49 +100,64 @@
 
         // Initialize localStorage for playlists
         function initializeStorage(playlistsData) {
-            if (!localStorage.getItem('playlists')) {
-                localStorage.setItem('playlists', JSON.stringify(playlistsData));
-            }
+            const stored = JSON.parse(localStorage.getItem('playlists') || '[]');
+            const merged = playlistsData.map((incomingPlaylist) => {
+                const existing = stored.find(p => p.id === incomingPlaylist.id);
+                if (!existing) return incomingPlaylist;
+
+                // Merge songs
+                const existingSongIds = new Set(existing.Songs.map(s => s.id));
+                const newSongs = incomingPlaylist.Songs.filter(s => !existingSongIds.has(s.id));
+                return {
+                    ...existing,
+                    Songs: [...existing.Songs, ...newSongs]
+                };
+            });
+
+            localStorage.setItem('playlists', JSON.stringify(merged));
         }
 
         // Update metadata in background
         async function updateMetadataInBackground() {
-            const playlists = JSON.parse(localStorage.getItem('playlists') || '[]');
-            const songs = [];
-            for (const playlist of playlists) {
-                for (const song of playlist.Songs) {
-                    songs.push({ id: song.id, youtubeid: song.youtubeid });
-                }
-            }
+            let playlists = JSON.parse(localStorage.getItem('playlists') || '[]');
+            const songs = playlists.flatMap(p => p.Songs.map(s => ({ ...s })));
+
             console.log(`Starting background metadata update for ${songs.length} songs`);
 
             for (const song of songs) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit
+
                 try {
-                    console.log(`Fetching metadata for song ID ${song.id} (${song.youtubeid})`);
-                    const playlists = JSON.parse(localStorage.getItem('playlists') || '[]');
+                    // Simulate fetch from YouTube or other metadata source
+                    const metadata = await fetchMetadata(song.youtubeid); // Implement this
+
+                    // Update in localStorage
                     for (const playlist of playlists) {
-                        const songRecord = playlist.Songs.find(s => s.id === song.youtubeid);
-                        if (songRecord) {
-                            songRecord.views = song.views;
-                            songRecord.likes = song.likes;
-                            if (currentPlaylist.find(s => s.id === song.youtubeid)) {
-                                currentPlaylist = currentPlaylist.map(s =>
-                                    s.id === song.youtubeid ? { ...s, views: metadata.views, likes: metadata.likes } : s
-                                );
-                                if (currentTrackIndex < currentPlaylist.length && currentPlaylist[currentTrackIndex].id === song.id) {
-                                    updateNowPlaying();
-                                }
-                                updateSongList();
-                            }
+                        const s = playlist.Songs.find(x => x.id === song.id);
+                        if (s) {
+                            s.views = metadata.views;
+                            s.likes = metadata.likes;
                         }
                     }
+
                     localStorage.setItem('playlists', JSON.stringify(playlists));
-                    console.log(`Updated metadata for song ID ${song.youtubeid}: Views=${metadata.views}, Likes=${metadata.likes}`);
+
+                    // Optionally update UI
+                    if (typeof currentPlaylist !== 'undefined') {
+                        const index = currentPlaylist.findIndex(s => s.id === song.id);
+                        if (index !== -1) {
+                            currentPlaylist[index] = { ...currentPlaylist[index], ...metadata };
+                            if (index === currentTrackIndex) updateNowPlaying();
+                            updateSongList();
+                        }
+                    }
+
+                    console.log(`Updated metadata for ${song.youtubeid}: Views=${metadata.views}, Likes=${metadata.likes}`);
                 } catch (error) {
-                    console.error(`Failed to update metadata for song ID ${song.id}:`, error);
+                    console.error(`Failed to update metadata for ${song.youtubeid}:`, error);
                 }
             }
+
             console.log('Background metadata update completed');
         }
 
