@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const Redis = require('ioredis');
-const { Sequelize, DataTypes } = require('sequelize');
+const { Sequelize, Op, DataTypes } = require('sequelize');
 const youtubedl = require('youtube-dl-exec');
 const path = require('path');
 const bodyParser = require('body-parser');
