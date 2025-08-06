@@ -98,6 +98,47 @@
             }
         ];
 
+        let latestMetadataCache = null;
+
+        async function fetchLatestMetadataCache() {
+            if (latestMetadataCache) return latestMetadataCache; // Already fetched
+
+            try {
+                const res = await fetch('https://mediaplayer.nekosunevr.co.uk/api/playlists');
+                if (!res.ok) throw new Error('Failed to fetch playlists metadata');
+                const data = await res.json();
+                latestMetadataCache = {};
+
+                for (const playlist of data.playlists) {
+                    for (const song of playlist.Songs) {
+                        latestMetadataCache[song.youtubeid] = {
+                            title: song.title,
+                            artist: song.Artist,
+                            cover: song.cover,
+                            views: song.views,
+                            likes: song.likes
+                       };
+                    }
+               }
+               return latestMetadataCache;
+            } catch (err) {
+                console.error('Error fetching metadata cache:', err);
+                return {};
+            }
+        }
+
+        async function fetchMetadata(youtubeid) {
+            const cache = await fetchLatestMetadataCache();
+            return cache[youtubeid] || {
+                title: 'Unknown',
+                artist: 'Unknown',
+                cover: '',
+                views: 0,
+                likes: 0
+            };
+        }
+
+
         // Initialize localStorage for playlists
         function initializeStorage(playlistsData) {
             const stored = JSON.parse(localStorage.getItem('playlists') || '[]');
@@ -147,26 +188,23 @@
             console.log(`Starting background metadata update for ${songs.length} songs`);
 
             for (const song of songs) {
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Rate limit
+                await new Promise(resolve => setTimeout(resolve, 500)); // throttle
 
                 try {
-                    // Simulate fetch from YouTube or other metadata source
-                    const metadata = await fetchMetadata(song.youtubeid); // Implement this
+                    const metadata = await fetchMetadata(song.youtubeid);
 
-                    // Update in localStorage
+                    // Update local copy
                     for (const playlist of playlists) {
-                        const s = playlist.Songs.find(x => x.id === song.id);
+                        const s = playlist.Songs.find(x => x.youtubeid === song.youtubeid);
                         if (s) {
-                            s.views = metadata.views;
-                            s.likes = metadata.likes;
+                            Object.assign(s, metadata);
                         }
                     }
 
                     localStorage.setItem('playlists', JSON.stringify(playlists));
 
-                    // Optionally update UI
                     if (typeof currentPlaylist !== 'undefined') {
-                        const index = currentPlaylist.findIndex(s => s.id === song.id);
+                        const index = currentPlaylist.findIndex(s => s.youtubeid === song.youtubeid);
                         if (index !== -1) {
                             currentPlaylist[index] = { ...currentPlaylist[index], ...metadata };
                             if (index === currentTrackIndex) updateNowPlaying();
@@ -174,7 +212,7 @@
                         }
                     }
 
-                    console.log(`Updated metadata for ${song.youtubeid}: Views=${metadata.views}, Likes=${metadata.likes}`);
+                    console.log(`Updated metadata for ${song.youtubeid}:`, metadata);
                 } catch (error) {
                     console.error(`Failed to update metadata for ${song.youtubeid}:`, error);
                 }
