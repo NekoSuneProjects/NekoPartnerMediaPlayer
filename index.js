@@ -90,22 +90,36 @@ async function enqueueOutdatedSongs() {
 async function processYouTubeID(youtubeid) {
     try {
         console.log(`[WORKER] Processing ${youtubeid}`);
-        const stats = await fetchYouTubeStats(youtubeid);
 
-        await redis.set(`ytstats:${youtubeid}`, JSON.stringify(stats), 'EX', 600);
+        // Try reading from Redis cache first
+        const cached = await redis.get(`ytstats:${youtubeid}`);
+
+        let stats;
+        if (cached) {
+            // Use cached data
+            stats = JSON.parse(cached);
+            console.log(`[CACHE] Using cached stats for ${youtubeid}`);
+        } else {
+            // Cache expired or missing, fetch new stats
+            console.log(`[CACHE] Cache miss, fetching fresh stats for ${youtubeid}`);
+            stats = await fetchYouTubeStats(youtubeid);
+            await redis.set(`ytstats:${youtubeid}`, JSON.stringify(stats), 'EX', 600);
+        }
+
+        // Update database regardless (fresh or cached)
         await Song.update({
             views: stats.views,
-            likes: stats.likes,
-            updatedAt: new Date()
+            likes: stats.likes
         }, { where: { youtubeid } });
 
         console.log(`[WORKER] Done: ${youtubeid}`);
     } catch (err) {
         console.error(`[WORKER] Error processing ${youtubeid}:`, err);
     } finally {
-        inQueueSet.delete(youtubeid); // Allow it to be re-queued later
+        inQueueSet.delete(youtubeid); // Allow requeueing in future
     }
 }
+
 
 function feedLimiter() {
     if (!youtubeQueue.isEmpty()) {
