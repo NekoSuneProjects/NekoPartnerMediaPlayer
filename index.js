@@ -4,10 +4,10 @@ const session = require('express-session');
 const Queue = require('queue-fifo');
 const Redis = require('ioredis');
 const { Sequelize, Op, DataTypes } = require('sequelize');
-const youtubedl = require('youtube-dl-exec');
 const path = require('path');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
+const fetch = require('node-fetch')
 
 const { Playlist, Song, User, sequelize } = require('./models');
 
@@ -53,22 +53,30 @@ app.use(session({
 
 // Helper: Run youtube-dl-exec and parse stats
 async function fetchYouTubeStats(youtubeid) {
-    try {
-        const data = await youtubedl(`https://www.youtube.com/watch?v=${youtubeid}`, {
-            dumpSingleJson: true,
-            noCheckCertificates: true,
-            noWarnings: true,
-            preferFreeFormats: true
-        });
+  const infoUrl = `http://localhost:3000/info?url=${encodeURIComponent(
+    `https://www.youtube.com/watch?v=${youtubeid}`
+  )}`;
 
-        return {
-            views: data.view_count?.toString() || 'N/A',
-            likes: data.like_count?.toString() || 'N/A'
-        };
-    } catch (err) {
-        console.error(`youtube-dl-exec failed for ${youtubeid}:`, err);
-        return { views: 'N/A', likes: 'N/A' };
-    }
+  try {
+    const res = await fetch(infoUrl, { headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from /info`);
+
+    const data = await res.json();
+
+    // Try common field names, fall back to nested shapes if your API wraps them
+    const views =
+      data.view_count ?? data.views ?? data.stats?.views ?? null;
+    const likes =
+      data.like_count ?? data.likes ?? data.stats?.likes ?? null;
+
+    return {
+      views: views != null ? String(views) : "N/A",
+      likes: likes != null ? String(likes) : "N/A",
+    };
+  } catch (err) {
+    console.error(`GET /info failed for ${youtubeid}:`, err);
+    return { views: "N/A", likes: "N/A" };
+  }
 }
 
 async function enqueueOutdatedSongs() {
