@@ -213,7 +213,8 @@ app.get('/api/playlists', async (req, res) => {
             cover: song.cover,
             youtubeid: song.youtubeid,
             views: song.views,
-            likes: song.likes
+            likes: song.likes,
+            createdAt: song.createdAt
         }))
     }));
 
