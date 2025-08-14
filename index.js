@@ -53,7 +53,7 @@ app.use(session({
 
 // Helper: Run youtube-dl-exec and parse stats
 async function fetchYouTubeStats(youtubeid) {
-  const infoUrl = `http://localhost:3000/info?url=${encodeURIComponent(
+  const infoUrl = `${process.env.YTDLP_API}/info?url=${encodeURIComponent(
     `https://www.youtube.com/watch?v=${youtubeid}`
   )}`;
 
