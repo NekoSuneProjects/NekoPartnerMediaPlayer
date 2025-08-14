@@ -1,296 +1,341 @@
-require('dotenv').config();
-const express = require('express');
-const session = require('express-session');
-const Queue = require('queue-fifo');
-const Redis = require('ioredis');
-const { Sequelize, Op, DataTypes } = require('sequelize');
-const youtubedl = require('youtube-dl-exec');
-const path = require('path');
-const bodyParser = require('body-parser');
-const bcrypt = require('bcrypt');
+import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import morgan from "morgan";
+import { LRUCache } from 'lru-cache'
+import youtubedl from "youtube-dl-exec";
+import fs from "node:fs/promises";
+import fssync from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const { Playlist, Song, User, sequelize } = require('./models');
-
-const COOLDOWN_MS = 30 * 1000; // 30 seconds between updates
-const youtubeQueue = new Queue();
-const inQueueSet = new Set(); // Track what's already queued
-let isWorkerRunning = false;
-
-const Bottleneck = require('bottleneck');
-
-const limiter = new Bottleneck({
-    minTime: 30 * 1000,    // 30 seconds between jobs
-    maxConcurrent: 1       // Only one job at a time
-});
-
-// Helper to sleep for cooldown
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const redis = new Redis({
-    host: process.env.REDIS_HOST,
-    port: Number(process.env.REDIS_PORT),
-    password: process.env.REDIS_PASSWORD,
-    db: Number(process.env.REDIS_DB || 0)
-});
+const TIMEOUT_MS = parseInt(process.env.YTDLP_TIMEOUT_MS || "60000", 10); // 60s default
+const DOWNLOAD_DIR = path.join(__dirname, "downloads");
+const MAX_FILE_AGE_MS = parseInt(process.env.MAX_FILE_AGE_MS || `${60 * 60 * 1000}`, 10); // 1 hour
+
+// Ensure downloads dir exists
+if (!fssync.existsSync(DOWNLOAD_DIR)) {
+  fssync.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+}
 
 // Middleware
-app.use(express.static('public'));
+app.use(helmet());
+app.use(morgan("combined"));
+app.use(
+  rateLimit({
+    windowMs: 60_000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+// Serve downloaded files
+app.use("/files", express.static(DOWNLOAD_DIR, { fallthrough: false }));
 
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
-app.use(session({
-    secret: process.env.SECRET_KEY,
-    resave: false,
-    saveUninitialized: false
-}));
+// Simple cache for /info
+const cache = new LRUCache({ max: 500, ttl: 5 * 60 * 1000 });
 
-// Helper: Run youtube-dl-exec and parse stats
-async function fetchYouTubeStats(youtubeid) {
-    try {
-        const data = await youtubedl(`https://www.youtube.com/watch?v=${youtubeid}`, {
-            dumpSingleJson: true,
-            noCheckCertificates: true,
-            noWarnings: true,
-            preferFreeFormats: true
-        });
+const isValidUrl = (s) => {
+  try {
+    const u = new URL(s);
+    return ["http:", "https:"].includes(u.protocol);
+  } catch {
+    return false;
+  }
+};
 
-        return {
-            views: data.view_count?.toString() || 'N/A',
-            likes: data.like_count?.toString() || 'N/A'
-        };
-    } catch (err) {
-        console.error(`youtube-dl-exec failed for ${youtubeid}:`, err);
-        return { views: 'N/A', likes: 'N/A' };
-    }
+// ---- yt-dlp helpers ----
+const baseArgs = {
+  noCheckCertificates: true,
+  noWarnings: true,
+  skipDownload: true,
+  addHeader: ["referer:youtube.com", "user-agent:googlebot"]
+};
+
+async function fetchInfo(url, flatPlaylist = false) {
+  const args = {
+    ...baseArgs,
+    dumpSingleJson: true,
+    skipDownload: true,
+  };
+  if (flatPlaylist) args.flatPlaylist = true;
+  return youtubedl(url, args);
 }
 
-async function enqueueOutdatedSongs() {
-    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
-    const songs = await Song.findAll({
-        where: { updatedAt: { [Op.lt]: cutoff } }
-    });
-
-    for (const song of songs) {
-        if (!inQueueSet.has(song.youtubeid)) {
-            youtubeQueue.enqueue(song.youtubeid);
-            inQueueSet.add(song.youtubeid);
-            console.log(`[QUEUE] Enqueued ${song.youtubeid}`);
-        }
-    }
+function safeBasename(s, fallback) {
+  // Light sanitizer for filenames
+  const cleaned = (s || fallback || "file")
+    .replace(/[\/\\?%*:|"<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "file";
 }
 
+async function downloadAudioMP3(url, meta) {
+  const id = meta?.id;
+  const title = meta?.title;
+  const baseName = safeBasename(`${title || id || "audio"}-${id || Date.now()}`);
+  const outTpl = path.join(DOWNLOAD_DIR, `${baseName}.%(ext)s`);
 
-async function processYouTubeID(youtubeid) {
-    try {
-        console.log(`[WORKER] Processing ${youtubeid}`);
+  await youtubedl(url, {
+    noWarnings: true,
+    noCheckCertificates: true,
+    addHeader: ["referer:youtube.com", "user-agent:googlebot"],
+    extractAudio: true,       // Extract audio only
+    audioFormat: "mp3",       // Convert to MP3
+    audioQuality: "0",        // Best quality
+    output: outTpl
+  });
 
-        // Try reading from Redis cache first
-        const cached = await redis.get(`ytstats:${youtubeid}`);
+  const files = await fs.readdir(DOWNLOAD_DIR);
+  const produced =
+    files.find((f) => f.startsWith(baseName) && f.endsWith(".mp3")) ||
+    files.find((f) => f.startsWith(baseName)); // backup
 
-        let stats;
-        if (cached) {
-            // Use cached data
-            stats = JSON.parse(cached);
-            console.log(`[CACHE] Using cached stats for ${youtubeid}`);
-        } else {
-            // Cache expired or missing, fetch new stats
-            console.log(`[CACHE] Cache miss, fetching fresh stats for ${youtubeid}`);
-            stats = await fetchYouTubeStats(youtubeid);
-            await redis.set(`ytstats:${youtubeid}`, JSON.stringify(stats), 'EX', 600);
-        }
-
-        // Update database regardless (fresh or cached)
-        await Song.update({
-            views: stats.views,
-            likes: stats.likes
-        }, { where: { youtubeid } });
-
-        console.log(`[WORKER] Done: ${youtubeid}`);
-    } catch (err) {
-        console.error(`[WORKER] Error processing ${youtubeid}:`, err);
-    } finally {
-        inQueueSet.delete(youtubeid); // Allow requeueing in future
-    }
+  if (!produced) throw new Error("Audio file not found after download");
+  return produced;
 }
 
+async function downloadAudioM4A(url, meta) {
+  // Prefer m4a (AAC). If container differs, remux to m4a.
+  const id = meta?.id;
+  const title = meta?.title;
+  const baseName = safeBasename(`${title || id || "audio"}-${id || Date.now()}`);
+  const outTpl = path.join(DOWNLOAD_DIR, `${baseName}.%(ext)s`);
 
-function feedLimiter() {
-    if (!youtubeQueue.isEmpty()) {
-        const youtubeid = youtubeQueue.dequeue();
-        limiter.schedule(() => processYouTubeID(youtubeid));
-    }
+  await youtubedl(url, {
+    // Download best audio, output to template, extract/remux to m4a if needed
+    noWarnings: true,
+    noCheckCertificates: true,
+    addHeader: ["referer:youtube.com", "user-agent:googlebot"],
+    // Two good approaches:
+    // 1) extractAudio + audioFormat m4a (transcode if needed)
+    // 2) format bestaudio + remux to m4a (no quality loss if possible)
+    // We'll prefer remux when possible:
+    format: "bestaudio/best",
+    remuxVideo: "m4a", // yt-dlp treats this as "remux to audio container when possible"
+    // Fall back to postprocessing into m4a when required:
+    extractAudio: true,
+    audioFormat: "m4a",
+    output: outTpl
+  });
+
+  // Find the produced file (extension may vary briefly; prefer .m4a)
+  const files = await fs.readdir(DOWNLOAD_DIR);
+  const produced =
+    files.find((f) => f.startsWith(baseName) && f.endsWith(".m4a")) ||
+    files.find((f) => f.startsWith(baseName)); // backup
+
+  if (!produced) throw new Error("Audio file not found after download");
+  return produced;
 }
 
-// Background updater to sync stats into database every minute
-async function updateAllStatsInBackground() {
-    try {
-        const cutoff = new Date(Date.now() - 10 * 60 * 1000); // 12 hours ago
-        const songs = await Song.findAll({
-            where: {
-                updatedAt: { [Op.lt]: cutoff }
-            }
-        });
-        for (const song of songs) {
-            const stats = await fetchYouTubeStats(song.youtubeid);
-            await redis.set(`ytstats:${song.youtubeid}`, JSON.stringify(stats), 'EX', 60);
-            await Song.update({ views: stats.views, likes: stats.likes }, { where: { youtubeid: song.youtubeid } });
-            console.log(`[${new Date().toISOString()}] Updated stats for ${song.youtubeid}. Waiting ${COOLDOWN_MS / 1000}s...`);
-            await sleep(COOLDOWN_MS);
-        }
-    } catch (err) {
-        console.error('Background stats update failed:', err);
-    }
+async function downloadVideoMP4(url, meta) {
+  const id = meta?.id;
+  const title = meta?.title;
+  const baseName = safeBasename(`${title || id || "video"}-${id || Date.now()}`);
+  const outTpl = path.join(DOWNLOAD_DIR, `${baseName}.%(ext)s`);
+
+  await youtubedl(url, {
+    noWarnings: true,
+    noCheckCertificates: true,
+    addHeader: ["referer:youtube.com", "user-agent:googlebot"],
+    // Prefer best mp4 video+audio; remux to mp4 if needed
+    format:
+      "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    remuxVideo: "mp4",
+    output: outTpl
+  });
+
+  const files = await fs.readdir(DOWNLOAD_DIR);
+  const produced =
+    files.find((f) => f.startsWith(baseName) && f.endsWith(".mp4")) ||
+    files.find((f) => f.startsWith(baseName)); // backup
+
+  if (!produced) throw new Error("Video file not found after download");
+  return produced;
 }
 
-setInterval(enqueueOutdatedSongs, 60 * 1000);
-setInterval(feedLimiter, 5000);
+// ---- Routes ----
 
-app.get('/', async (req, res) => {
-    const playlists = await Playlist.findAll({
-        include: {
-            model: Song,
-            as: 'Songs'
-        }
-    });
-    res.render('index', { playlists }); // assuming index.ejs is in views/
-});
+// Info endpoint (unchanged, but uses youtube-dl-exec)
+app.get("/info", async (req, res) => {
+  const url = req.query.url?.toString().trim();
+  const flat = req.query.flat == "1";
+  const fields = req.query.fields?.toString();
+  const bypassCache = req.query.cache === "0";
 
-app.get('/mediaplayer', async (req, res) => {
-    res.render('mediaplayer'); // assuming index.ejs is in views/
-});
+  if (!url || !isValidUrl(url)) {
+    return res.status(400).json({ error: "Missing or invalid ?url=" });
+  }
 
-// Admin Auth Middleware
-function isAuthenticated(req, res, next) {
-    if (req.session.userId) return next();
-    res.redirect('/admin/login');
-}
-
-// Replace:
-app.get('/admin/login', (req, res) => {
-    res.render('login');
-});
-
-app.get('/admin', isAuthenticated, async (req, res) => {
-    const playlists = await Playlist.findAll({
-        include: {
-            model: Song,
-            as: 'Songs'
-        }
-    });
-    res.render('admin', { playlists });         // pass to EJS view
-});
-
-// API Endpoint
-app.get('/api/playlists', async (req, res) => {
-    const playlists = await Playlist.findAll({
-        include: {
-            model: Song,
-            as: 'Songs'
-        }
-    });
-
-    const formatted = playlists.map(playlist => ({
-        name: playlist.name,
-        cover: playlist.cover,
-        Songs: playlist.Songs.map(song => ({
-            Artist: song.Artist,
-            title: song.title,
-            cover: song.cover,
-            youtubeid: song.youtubeid,
-            views: song.views,
-            likes: song.likes
-        }))
-    }));
-
-    res.json({ playlists: formatted });
-
-});
-
-app.post('/admin/login', async (req, res) => {
-    const { username, password } = req.body;
-    const user = await User.findOne({ where: { username } });
-    if (user && await bcrypt.compare(password, user.passwordHash)) {
-        req.session.userId = user.id;
-        res.redirect('/admin');
-    } else {
-        res.send('Invalid credentials');
-    }
-});
-
-app.post('/admin/add-song', isAuthenticated, async (req, res) => {
-  const { Artist, title, cover, youtubeid, playlist } = req.body;
+  const cacheKey = JSON.stringify({ url, flat, fields: fields || "full" });
+  if (!bypassCache) {
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json(cached);
+  }
 
   try {
-    const playlistRecord = await Playlist.findOne({ where: { name: playlist } });
-    if (!playlistRecord) {
-      return res.status(400).send('Playlist not found');
-    }
-
-    await Song.create({
-      Artist,
-      title,
-      cover,
-      youtubeid,
-      playlistId: playlistRecord.id
-    });
-
-    res.redirect('/admin');
+    const raw = await fetchInfo(url, flat);
+    const payload = fields === "basic" ? pickFields(raw) : raw;
+    cache.set(cacheKey, payload);
+    res.json(payload);
   } catch (err) {
-    console.error('Error adding song:', err);
-    res.status(500).send('Internal Server Error');
+    res.status(500).json({
+      error: "youtube-dl-exec failed",
+      detail: err?.stderr?.toString?.() || err?.message || "Unknown error",
+    });
   }
 });
 
-app.post('/admin/delete-song', isAuthenticated, async (req, res) => {
-    await Song.destroy({ where: { youtubeid: req.body.youtubeid } });
-    res.redirect('/admin');
+// Download AUDIO (.m4a)
+app.get("/download/audio", async (req, res) => {
+  const url = req.query.url?.toString().trim();
+  if (!url || !isValidUrl(url)) {
+    return res.status(400).json({ error: "Missing or invalid ?url=" });
+  }
+
+  try {
+    const meta = await fetchInfo(url);
+    const filename = await downloadAudioMP3(url, meta);
+    res.json({
+      ok: true,
+      kind: "audio",
+      filename,
+      link: `/files/${encodeURIComponent(filename)}`,
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "audio download failed",
+      detail: err?.stderr?.toString?.() || err?.message || "Unknown error",
+    });
+  }
 });
 
-app.post('/admin/add-playlist', isAuthenticated, async (req, res) => {
-    const { name, cover } = req.body;
-    await Playlist.create({ name, cover });
-    res.redirect('/admin');
+// Download VIDEO (.mp4)
+app.get("/download/video", async (req, res) => {
+  const url = req.query.url?.toString().trim();
+  if (!url || !isValidUrl(url)) {
+    return res.status(400).json({ error: "Missing or invalid ?url=" });
+  }
+
+  try {
+    const meta = await fetchInfo(url);
+    const filename = await downloadVideoMP4(url, meta);
+    res.json({
+      ok: true,
+      kind: "video",
+      filename,
+      link: `/files/${encodeURIComponent(filename)}`,
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: "video download failed",
+      detail: err?.stderr?.toString?.() || err?.message || "Unknown error",
+    });
+  }
 });
 
-app.post('/admin/delete-playlist', isAuthenticated, async (req, res) => {
-    const { name } = req.body;
-    await Playlist.destroy({ where: { name } });
-    await Song.destroy({ where: { playlist: name } }); // also delete associated songs
-    res.redirect('/admin');
-});
+// Optional: basic field trimmer for /info?fields=basic
+function pickFields(data) {
+  if (!data || typeof data !== "object") return data;
 
-app.get('/admin/playlists', isAuthenticated, async (req, res) => {
-    const playlists = await Playlist.findAll();
-    res.json(playlists);
-});
+  if (Array.isArray(data.entries)) {
+    return {
+      type: "playlist",
+      id: data.id,
+      title: data.title,
+      extractor: data.extractor_key,
+      webpage_url: data.webpage_url,
+      entries: data.entries.map((e) => ({
+        id: e.id,
+        title: e.title,
+        duration: e.duration,
+        url: e.url || e.webpage_url,
+      })),
+    };
+  }
 
-app.post('/admin/update-password', isAuthenticated, async (req, res) => {
-    const { newPassword } = req.body;
-    const user = await User.findByPk(req.session.userId);
-    user.passwordHash = await bcrypt.hash(newPassword, 10);
-    await user.save();
-    res.redirect('/admin');
-});
+  return {
+    type: data.is_live ? "live" : "video",
+    id: data.id,
+    title: data.title,
+    duration: data.duration,
+    uploader: data.uploader,
+    channel: data.channel,
+    thumbnail: data.thumbnail,
+    webpage_url: data.webpage_url,
+    extractor: data.extractor_key,
+    formats: data.formats?.map((f) => ({
+      format_id: f.format_id,
+      ext: f.ext,
+      acodec: f.acodec,
+      vcodec: f.vcodec,
+      tbr: f.tbr,
+      width: f.width,
+      height: f.height,
+    })),
+  };
+}
 
-// First-time setup default admin
-(async () => {
-    await sequelize.sync();
-    const existing = await User.findOne({ where: { username: 'admin' } });
-    if (!existing) {
-        const passwordHash = await bcrypt.hash('admin', 10);
-        await User.create({ username: 'admin', passwordHash });
-        console.log('Default admin user created: admin/admin');
+// ---- Cleanup job: every hour, delete files older than MAX_FILE_AGE_MS ----
+async function cleanupDownloads() {
+  try {
+    const now = Date.now();
+    const files = await fs.readdir(DOWNLOAD_DIR);
+    const toDelete = [];
+
+    for (const file of files) {
+      const fp = path.join(DOWNLOAD_DIR, file);
+      try {
+        const st = await fs.stat(fp);
+        // Skip if not a file
+        if (!st.isFile()) continue;
+        if (now - st.mtimeMs > MAX_FILE_AGE_MS) {
+          toDelete.push(fp);
+        }
+      } catch {
+        // ignore stat errors
+      }
     }
-})();
 
-// Start
+    await Promise.allSettled(toDelete.map((fp) => fs.unlink(fp)));
+    if (toDelete.length) {
+      console.log(`[cleanup] Deleted ${toDelete.length} old files`);
+    }
+  } catch (e) {
+    console.warn("[cleanup] error:", e?.message || e);
+  }
+}
+
+// Run once at startup and then hourly
+cleanupDownloads();
+setInterval(cleanupDownloads, 60 * 60 * 1000);
+
+// ---- Root ----
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    endpoints: {
+      info: "/info?url=<VIDEO_OR_PLAYLIST_URL>&fields=basic",
+      download_audio: "/download/audio?url=<VIDEO_URL>",
+      download_video: "/download/video?url=<VIDEO_URL>",
+      files_base: "/files/<FILENAME>",
+    },
+    config: {
+      TIMEOUT_MS,
+      DOWNLOAD_DIR,
+      MAX_FILE_AGE_MS,
+    },
+  });
+});
+
 app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`yt-dlp API listening at http://localhost:${PORT}`);
 });
