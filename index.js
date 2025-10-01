@@ -176,8 +176,19 @@ app.get('/mediaplayer', async (req, res) => {
 
 // Admin Auth Middleware
 function isAuthenticated(req, res, next) {
-    if (req.session.userId) return next();
-    res.redirect('/login');
+  if (!req.session.userId) return res.redirect('/login');
+  const user = await User.findByPk(req.session.userId);
+
+  if (user.status === 'suspended') {
+    return res.status(403).send('Account suspended');
+  }
+  if (user.status === 'banned') {
+    req.session.destroy(() => res.redirect('/login'));
+    return;
+  }
+
+  req.user = user;
+  next();
 }
 
 async function isAdmin(req, res, next) {
