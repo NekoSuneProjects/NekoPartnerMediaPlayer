@@ -19,6 +19,7 @@ const PORT = process.env.PORT || 3000;
 const TIMEOUT_MS = parseInt(process.env.YTDLP_TIMEOUT_MS || "60000", 10); // 60s default
 const DOWNLOAD_DIR = path.join(__dirname, "downloads");
 const MAX_FILE_AGE_MS = parseInt(process.env.MAX_FILE_AGE_MS || `${60 * 60 * 1000}`, 10); // 1 hour
+const customYtdlp = youtubedl.create(process.env.YDLP_PATH);
 
 // Ensure downloads dir exists
 if (!fssync.existsSync(DOWNLOAD_DIR)) {
@@ -70,7 +71,7 @@ async function fetchInfo(url, flatPlaylist = false) {
     skipDownload: true,
   };
   if (flatPlaylist) args.flatPlaylist = true;
-  return youtubedl(url, args);
+  return customYtdlp(url, args);
 }
 
 function safeBasename(s, fallback) {
@@ -88,7 +89,7 @@ async function downloadAudioMP3(url, meta) {
   const baseName = safeBasename(`${title || id || "audio"}-${id || Date.now()}`);
   const outTpl = path.join(DOWNLOAD_DIR, `${baseName}.%(ext)s`);
 
-  await youtubedl(url, {
+  await customYtdlp(url, {
     noWarnings: true,
     noCheckCertificates: true,
     addHeader: ["referer:youtube.com", "user-agent:googlebot"],
@@ -117,7 +118,7 @@ async function downloadAudioM4A(url, meta) {
   const baseName = safeBasename(`${title || id || "audio"}-${id || Date.now()}`);
   const outTpl = path.join(DOWNLOAD_DIR, `${baseName}.%(ext)s`);
 
-  await youtubedl(url, {
+  await customYtdlp(url, {
     // Download best audio, output to template, extract/remux to m4a if needed
     noWarnings: true,
     noCheckCertificates: true,
@@ -153,7 +154,7 @@ async function downloadVideoMP4(url, meta) {
   const baseName = safeBasename(`${title || id || "video"}-${id || Date.now()}`);
   const outTpl = path.join(DOWNLOAD_DIR, `${baseName}.%(ext)s`);
 
-  await youtubedl(url, {
+  await customYtdlp(url, {
     noWarnings: true,
     noCheckCertificates: true,
     addHeader: ["referer:youtube.com", "user-agent:googlebot"],
