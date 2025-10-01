@@ -175,7 +175,7 @@ app.get('/mediaplayer', async (req, res) => {
 });
 
 // Admin Auth Middleware
-function isAuthenticated(req, res, next) {
+async function isAuthenticated(req, res, next) {
   if (!req.session.userId) return res.redirect('/login');
   const user = await User.findByPk(req.session.userId);
 
