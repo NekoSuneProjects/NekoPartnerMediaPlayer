@@ -177,22 +177,159 @@ app.get('/mediaplayer', async (req, res) => {
 // Admin Auth Middleware
 function isAuthenticated(req, res, next) {
     if (req.session.userId) return next();
-    res.redirect('/admin/login');
+    res.redirect('/login');
+}
+
+async function isAdmin(req, res, next) {
+  if (!req.session.userId) return res.redirect('/login');
+
+  const user = await User.findByPk(req.session.userId);
+  if (user && user.role === 'admin') {
+    req.user = user;
+    return next();
+  }
+  res.status(403).send('Admins only');
+}
+
+async function enforceActiveUser(req, res, next) {
+  if (!req.session.userId) return res.redirect('/login');
+  const user = await User.findByPk(req.session.userId);
+
+  if (user.status === 'suspended') {
+    return res.status(403).send('Account suspended');
+  }
+  if (user.status === 'banned') {
+    req.session.destroy(() => res.redirect('/login'));
+    return;
+  }
+
+  req.user = user;
+  next();
 }
 
 // Replace:
-app.get('/admin/login', (req, res) => {
+app.get('/login', (req, res) => {
     res.render('login');
 });
 
-app.get('/admin', isAuthenticated, async (req, res) => {
+app.get('/user', isAuthenticated, async (req, res) => {
     const playlists = await Playlist.findAll({
-        include: {
-            model: Song,
-            as: 'Songs'
-        }
+      where: { userId: req.user.id },   // only user’s playlists
+      include: [{ model: Song, as: 'Songs' }]
     });
-    res.render('admin', { playlists });         // pass to EJS view
+    res.render('user', { playlists });         // pass to EJS view
+});
+
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    const user = await User.findOne({ where: { username } });
+    if (user && await bcrypt.compare(password, user.passwordHash)) {
+        req.session.userId = user.id;
+        res.redirect('/user');
+    } else {
+        res.send('Invalid credentials');
+    }
+});
+
+app.post('/user/add-song', isAuthenticated, async (req, res) => {
+  const { Artist, title, cover, youtubeid, playlist } = req.body;
+
+  try {
+    const playlistRecord = await Playlist.findOne({ where: { name: playlist } });
+    if (!playlistRecord) {
+      return res.status(400).send('Playlist not found');
+    }
+
+    await Song.create({
+      Artist,
+      title,
+      cover,
+      youtubeid,
+      playlistId: playlistRecord.id
+    });
+
+    res.redirect('/user');
+  } catch (err) {
+    console.error('Error adding song:', err);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.post('/user/delete-song', isAuthenticated, async (req, res) => {
+    await Song.destroy({ where: { youtubeid: req.body.youtubeid } });
+    res.redirect('/user');
+});
+
+app.post('/user/add-playlist', isAuthenticated, async (req, res) => {
+  try {
+    const { name, cover } = req.body;
+
+    await Playlist.create({
+      name,
+      cover,
+      userId: req.user.id   // link to the current user
+    });
+
+    res.redirect('/user');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Error creating playlist');
+  }
+});
+
+app.post('/user/delete-playlist', isAuthenticated, async (req, res) => {
+  try {
+    const { id } = req.body; // safer to use id, not name
+
+    // Ensure playlist belongs to logged-in user
+    const deleted = await Playlist.destroy({
+      where: {
+        id,
+        userId: req.user.id
+      }
+    });
+
+    if (!deleted) {
+      return res.status(403).send('Not allowed');
+    }
+
+    res.redirect('/user');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Error deleting playlist');
+  }
+});
+
+
+app.get('/user/playlists', isAuthenticated, async (req, res) => {
+  try {
+    const playlists = await Playlist.findAll({
+      where: { userId: req.user.id },   // only user’s playlists
+      include: [{ model: Song, as: 'Songs' }]
+    });
+
+    res.json(playlists);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Error fetching playlists');
+  }
+});
+
+app.post('/user/update-password', isAuthenticated, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await User.update(
+      { passwordHash: hash },
+      { where: { id: req.user.id } }
+    );
+
+    res.redirect('/user'); // or success page
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Error updating password');
+  }
 });
 
 // API Endpoint
@@ -222,70 +359,57 @@ app.get('/api/playlists', async (req, res) => {
 
 });
 
-app.post('/admin/login', async (req, res) => {
-    const { username, password } = req.body;
-    const user = await User.findOne({ where: { username } });
-    if (user && await bcrypt.compare(password, user.passwordHash)) {
-        req.session.userId = user.id;
-        res.redirect('/admin');
-    } else {
-        res.send('Invalid credentials');
-    }
+// Admin dashboard
+app.get('/admin', isAdmin, async (req, res) => {
+  const users = await User.findAll();
+  res.render('admin', { users });
 });
 
-app.post('/admin/add-song', isAuthenticated, async (req, res) => {
-  const { Artist, title, cover, youtubeid, playlist } = req.body;
+// Suspend user
+app.post('/admin/suspend', isAdmin, async (req, res) => {
+  const { userId } = req.body;
+  await User.update({ status: 'suspended' }, { where: { id: userId } });
+  res.redirect('/admin');
+});
 
+// Ban user
+app.post('/admin/ban', isAdmin, async (req, res) => {
+  const { userId } = req.body;
+  await User.update({ status: 'banned' }, { where: { id: userId } });
+  res.redirect('/admin');
+});
+
+// Reactivate user
+app.post('/admin/activate', isAdmin, async (req, res) => {
+  const { userId } = req.body;
+  await User.update({ status: 'active' }, { where: { id: userId } });
+  res.redirect('/admin');
+});
+
+// Create user (admin only)
+app.post('/admin/create-user', isAdmin, async (req, res) => {
+  const { username, password, role } = req.body;
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  await User.create({ username, passwordHash, role });
+  res.redirect('/admin');
+});
+
+app.post('/admin/reset-user-password', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    const playlistRecord = await Playlist.findOne({ where: { name: playlist } });
-    if (!playlistRecord) {
-      return res.status(400).send('Playlist not found');
-    }
+    const { userId, newPassword } = req.body;
 
-    await Song.create({
-      Artist,
-      title,
-      cover,
-      youtubeid,
-      playlistId: playlistRecord.id
-    });
+    const hash = await bcrypt.hash(newPassword, 10);
+    await User.update(
+      { passwordHash: hash },
+      { where: { id: userId } }
+    );
 
-    res.redirect('/admin');
+    res.redirect('/admin/users'); // back to user management
   } catch (err) {
-    console.error('Error adding song:', err);
-    res.status(500).send('Internal Server Error');
+    console.error(err);
+    res.status(500).send('Error resetting user password');
   }
-});
-
-app.post('/admin/delete-song', isAuthenticated, async (req, res) => {
-    await Song.destroy({ where: { youtubeid: req.body.youtubeid } });
-    res.redirect('/admin');
-});
-
-app.post('/admin/add-playlist', isAuthenticated, async (req, res) => {
-    const { name, cover } = req.body;
-    await Playlist.create({ name, cover });
-    res.redirect('/admin');
-});
-
-app.post('/admin/delete-playlist', isAuthenticated, async (req, res) => {
-    const { name } = req.body;
-    await Playlist.destroy({ where: { name } });
-    await Song.destroy({ where: { playlist: name } }); // also delete associated songs
-    res.redirect('/admin');
-});
-
-app.get('/admin/playlists', isAuthenticated, async (req, res) => {
-    const playlists = await Playlist.findAll();
-    res.json(playlists);
-});
-
-app.post('/admin/update-password', isAuthenticated, async (req, res) => {
-    const { newPassword } = req.body;
-    const user = await User.findByPk(req.session.userId);
-    user.passwordHash = await bcrypt.hash(newPassword, 10);
-    await user.save();
-    res.redirect('/admin');
 });
 
 // First-time setup default admin
