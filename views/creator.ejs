@@ -13,7 +13,7 @@
     <!-- Add Playlist -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Add Playlist</h2>
-      <form action="/creator/add-playlist" method="POST" class="space-y-4">
+      <form action="/user/add-playlist" method="POST" class="space-y-4">
         <input type="text" name="name" placeholder="Playlist Name" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <input type="text" name="cover" placeholder="Cover Image URL" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <button type="submit" class="w-full bg-green-600 hover:bg-green-700 p-2 rounded">Add Playlist</button>
@@ -23,7 +23,7 @@
     <!-- Add Song -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Add Song</h2>
-      <form action="/creator/add-song" method="POST" class="space-y-4">
+      <form action="/user/add-song" method="POST" class="space-y-4">
         <input type="text" name="Artist" placeholder="Artist" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <input type="text" name="title" placeholder="Title" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <input type="text" name="cover" placeholder="Cover URL" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
@@ -40,7 +40,7 @@
     <!-- Delete Playlist -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Delete Playlist</h2>
-      <form action="/creator/delete-playlist" method="POST" class="space-y-4">
+      <form action="/user/delete-playlist" method="POST" class="space-y-4">
         <select name="id" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
           <% playlists.forEach(function(playlist) { %>
             <option value="<%= playlist.id %>"><%= playlist.name %></option>
@@ -53,7 +53,7 @@
     <!-- Delete Song -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Delete Song</h2>
-      <form action="/creator/delete-song" method="POST" class="space-y-4">
+      <form action="/user/delete-song" method="POST" class="space-y-4">
         <select id="delete-playlist-select" onchange="updateSongDropdown()" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
           <option value="">Select Playlist</option>
           <% playlists.forEach(function(playlist) { %>
@@ -64,6 +64,14 @@
           <option value="">Select Song</option>
         </select>
         <button type="submit" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded">Delete Song</button>
+      </form>
+    </section>
+
+    <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
+      <h2 class="text-xl font-semibold mb-4">Change My Password</h2>
+      <form action="/user/update-password" method="POST" class="space-y-4">
+        <input type="password" name="newPassword" placeholder="New Password" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 p-2 rounded">Update Password</button>
       </form>
     </section>
   </main>
