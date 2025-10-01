@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Panel</title>
+  <title>Creator Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen p-4 bg-gray-900 text-white font-sans">
   <main class="max-w-3xl mx-auto space-y-10">
-    <h1 class="text-3xl font-bold text-center">Admin Panel</h1>
+    <h1 class="text-3xl font-bold text-center">Creator Panel</h1>
 
     <!-- Add Playlist -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Add Playlist</h2>
-      <form action="/admin/add-playlist" method="POST" class="space-y-4">
+      <form action="/creator/add-playlist" method="POST" class="space-y-4">
         <input type="text" name="name" placeholder="Playlist Name" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <input type="text" name="cover" placeholder="Cover Image URL" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <button type="submit" class="w-full bg-green-600 hover:bg-green-700 p-2 rounded">Add Playlist</button>
@@ -23,7 +23,7 @@
     <!-- Add Song -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Add Song</h2>
-      <form action="/admin/add-song" method="POST" class="space-y-4">
+      <form action="/creator/add-song" method="POST" class="space-y-4">
         <input type="text" name="Artist" placeholder="Artist" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <input type="text" name="title" placeholder="Title" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
         <input type="text" name="cover" placeholder="Cover URL" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
@@ -40,10 +40,10 @@
     <!-- Delete Playlist -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Delete Playlist</h2>
-      <form action="/admin/delete-playlist" method="POST" class="space-y-4">
-        <select name="name" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+      <form action="/creator/delete-playlist" method="POST" class="space-y-4">
+        <select name="id" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
           <% playlists.forEach(function(playlist) { %>
-            <option value="<%= playlist.name %>"><%= playlist.name %></option>
+            <option value="<%= playlist.id %>"><%= playlist.name %></option>
           <% }); %>
         </select>
         <button type="submit" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded">Delete Playlist</button>
@@ -53,7 +53,7 @@
     <!-- Delete Song -->
     <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
       <h2 class="text-xl font-semibold mb-4">Delete Song</h2>
-      <form action="/admin/delete-song" method="POST" class="space-y-4">
+      <form action="/creator/delete-song" method="POST" class="space-y-4">
         <select id="delete-playlist-select" onchange="updateSongDropdown()" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
           <option value="">Select Playlist</option>
           <% playlists.forEach(function(playlist) { %>
@@ -66,18 +66,8 @@
         <button type="submit" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded">Delete Song</button>
       </form>
     </section>
-
-    <!-- Change Admin Password -->
-    <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
-      <h2 class="text-xl font-semibold mb-4">Change Password</h2>
-      <form action="/admin/update-password" method="POST" class="space-y-4">
-        <input type="password" name="newPassword" placeholder="New Password" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
-        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 p-2 rounded">Update Password</button>
-      </form>
-    </section>
   </main>
 
-  <!-- Song Data JSON -->
   <script type="application/json" id="songs-data">
     <%- JSON.stringify(
       playlists.reduce((acc, p) => {
@@ -86,8 +76,6 @@
       }, {})
     ) %>
   </script>
-
-  <!-- Playlist → Song Dropdown Logic -->
   <script>
     function updateSongDropdown() {
       const playlistSelect = document.getElementById('delete-playlist-select');
