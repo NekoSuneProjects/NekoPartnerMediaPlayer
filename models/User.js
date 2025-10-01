@@ -8,6 +8,14 @@ module.exports = (sequelize, DataTypes) => {
     passwordHash: {
       type: DataTypes.STRING,
       allowNull: false
+    },
+    role: {
+      type: DataTypes.ENUM('user', 'admin'),
+      defaultValue: 'user'
+    },
+    status: {
+      type: DataTypes.ENUM('active', 'suspended', 'banned'),
+      defaultValue: 'active'
     }
   });
 
