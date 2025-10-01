@@ -57,7 +57,10 @@ const baseArgs = {
   noCheckCertificates: true,
   noWarnings: true,
   skipDownload: true,
-  addHeader: ["referer:youtube.com", "user-agent:googlebot"]
+  addHeader: ["referer:youtube.com", "user-agent:Googlebot"],
+  extractorArgs: [
+    	`youtubepot-bgutilhttp:base_url=${process.env.ProxySystemYT}`
+  ]
 };
 
 async function fetchInfo(url, flatPlaylist = false) {
@@ -89,6 +92,9 @@ async function downloadAudioMP3(url, meta) {
     noWarnings: true,
     noCheckCertificates: true,
     addHeader: ["referer:youtube.com", "user-agent:googlebot"],
+    extractorArgs: [
+    	`youtubepot-bgutilhttp:base_url=${process.env.ProxySystemYT}`
+    ],
     extractAudio: true,       // Extract audio only
     audioFormat: "mp3",       // Convert to MP3
     audioQuality: "0",        // Best quality
@@ -116,6 +122,9 @@ async function downloadAudioM4A(url, meta) {
     noWarnings: true,
     noCheckCertificates: true,
     addHeader: ["referer:youtube.com", "user-agent:googlebot"],
+    extractorArgs: [
+    	`youtubepot-bgutilhttp:base_url=${process.env.ProxySystemYT}`
+    ],
     // Two good approaches:
     // 1) extractAudio + audioFormat m4a (transcode if needed)
     // 2) format bestaudio + remux to m4a (no quality loss if possible)
@@ -148,6 +157,9 @@ async function downloadVideoMP4(url, meta) {
     noWarnings: true,
     noCheckCertificates: true,
     addHeader: ["referer:youtube.com", "user-agent:googlebot"],
+    extractorArgs: [
+    	`youtubepot-bgutilhttp:base_url=${process.env.ProxySystemYT}`
+    ],
     // Prefer best mp4 video+audio; remux to mp4 if needed
     format:
       "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
