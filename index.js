@@ -419,7 +419,7 @@ app.post('/admin/reset-user-password', isAuthenticated, isAdmin, async (req, res
       { where: { id: userId } }
     );
 
-    res.redirect('/admin/users'); // back to user management
+    res.redirect('/admin'); // back to user management
   } catch (err) {
     console.error(err);
     res.status(500).send('Error resetting user password');
