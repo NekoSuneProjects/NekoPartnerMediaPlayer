@@ -373,7 +373,10 @@ app.get('/api/playlists', async (req, res) => {
 // Admin dashboard
 app.get('/admin', isAdmin, async (req, res) => {
   const users = await User.findAll();
-  res.render('admin', { users });
+  const playlists = await Playlist.findAll({
+      include: [{ model: Song, as: 'Songs' }]
+  });
+  res.render('admin', { users, playlists });
 });
 
 // Suspend user
