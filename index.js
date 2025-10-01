@@ -75,7 +75,7 @@ async function fetchYouTubeStats(youtubeid) {
     };
   } catch (err) {
     console.error(`GET /info failed for ${youtubeid}:`, err);
-    return { views: "N/A", likes: "N/A" };
+    return { views: 0 likes: 0 };
   }
 }
 
