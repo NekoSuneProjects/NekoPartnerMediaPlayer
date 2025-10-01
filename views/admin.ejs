@@ -57,6 +57,19 @@
       </form>
     </section>
 
+    <section class="bg-gray-800 rounded-lg p-6 shadow-lg">
+      <h2 class="text-xl font-semibold mb-4">Reset User Password</h2>
+      <form action="/admin/reset-user-password" method="POST" class="space-y-4">
+        <select name="userId" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+          <% users.forEach(function(user) { %>
+            <option value="<%= user.id %>"><%= user.username %> (<%= user.role %>)</option>
+          <% }); %>
+        </select>
+        <input type="password" name="newPassword" placeholder="New Password" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+        <button type="submit" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded">Reset Password</button>
+      </form>
+    </section>
+
     <!-- Playlist/Song Management (reuse same as creator but /admin routes) -->
     <%- include("partials/admin-playlist-controls", { playlists }) %>
   </main>
