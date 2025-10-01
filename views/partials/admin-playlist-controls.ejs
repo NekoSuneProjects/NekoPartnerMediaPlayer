@@ -1,0 +1,58 @@
+<!-- Admin Playlist Controls -->
+
+<!-- Add Playlist -->
+<section class="bg-gray-800 rounded-lg p-6 shadow-lg">
+  <h2 class="text-xl font-semibold mb-4">Add Playlist</h2>
+  <form action="/admin/add-playlist" method="POST" class="space-y-4">
+    <input type="text" name="name" placeholder="Playlist Name" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+    <input type="text" name="cover" placeholder="Cover Image URL" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 p-2 rounded">Add Playlist</button>
+  </form>
+</section>
+
+<!-- Add Song -->
+<section class="bg-gray-800 rounded-lg p-6 shadow-lg">
+  <h2 class="text-xl font-semibold mb-4">Add Song</h2>
+  <form action="/admin/add-song" method="POST" class="space-y-4">
+    <input type="text" name="Artist" placeholder="Artist" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+    <input type="text" name="title" placeholder="Title" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+    <input type="text" name="cover" placeholder="Cover URL" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+    <input type="text" name="youtubeid" placeholder="YouTube Video ID" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+    <select name="playlist" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+      <% playlists.forEach(function(playlist) { %>
+        <option value="<%= playlist.name %>"><%= playlist.name %></option>
+      <% }); %>
+    </select>
+    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 p-2 rounded">Add Song</button>
+  </form>
+</section>
+
+<!-- Delete Playlist -->
+<section class="bg-gray-800 rounded-lg p-6 shadow-lg">
+  <h2 class="text-xl font-semibold mb-4">Delete Playlist</h2>
+  <form action="/admin/delete-playlist" method="POST" class="space-y-4">
+    <select name="name" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+      <% playlists.forEach(function(playlist) { %>
+        <option value="<%= playlist.name %>"><%= playlist.name %></option>
+      <% }); %>
+    </select>
+    <button type="submit" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded">Delete Playlist</button>
+  </form>
+</section>
+
+<!-- Delete Song -->
+<section class="bg-gray-800 rounded-lg p-6 shadow-lg">
+  <h2 class="text-xl font-semibold mb-4">Delete Song</h2>
+  <form action="/admin/delete-song" method="POST" class="space-y-4">
+    <select id="delete-playlist-select" onchange="updateSongDropdown()" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+      <option value="">Select Playlist</option>
+      <% playlists.forEach(function(playlist) { %>
+        <option value="<%= playlist.name %>"><%= playlist.name %></option>
+      <% }); %>
+    </select>
+    <select id="delete-song-select" name="youtubeid" required class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+      <option value="">Select Song</option>
+    </select>
+    <button type="submit" class="w-full bg-red-600 hover:bg-red-700 p-2 rounded">Delete Song</button>
+  </form>
+</section>
