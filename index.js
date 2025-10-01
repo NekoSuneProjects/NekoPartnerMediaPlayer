@@ -70,8 +70,8 @@ async function fetchYouTubeStats(youtubeid) {
       data.like_count ?? data.likes ?? data.stats?.likes ?? null;
 
     return {
-      views: views != null ? String(views) : "N/A",
-      likes: likes != null ? String(likes) : "N/A",
+      views: views != null ? String(views) : 0,
+      likes: likes != null ? String(likes) : 0,
     };
   } catch (err) {
     console.error(`GET /info failed for ${youtubeid}:`, err);
