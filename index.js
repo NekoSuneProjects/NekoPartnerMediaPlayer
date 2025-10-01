@@ -351,6 +351,6 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, process.env.IP, () => {
   console.log(`yt-dlp API listening at http://0.0.0.0:${PORT}`);
 });
