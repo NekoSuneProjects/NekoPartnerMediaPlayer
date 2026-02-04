@@ -37,6 +37,9 @@
                   <p class="text-gray-400">by <%= song.Artist %></p>
                   <p class="text-sm text-gray-500 mt-2">Views: <%= song.views || 'N/A' %> | Likes: <%= song.likes || 'N/A' %></p>
                   <a href="https://www.youtube.com/watch?v=<%= song.youtubeid %>" target="_blank" class="inline-block mt-2 text-blue-400 hover:underline">Watch on YouTube</a>
+                  <% if (song.pushfmurl) { %>
+                    <a href="<%= song.pushfmurl %>" target="_blank" class="inline-block mt-2 ml-4 text-green-400 hover:underline">Open Push.fm Release</a>
+                  <% } %>
                 </div>
               </div>
             <% }); %>

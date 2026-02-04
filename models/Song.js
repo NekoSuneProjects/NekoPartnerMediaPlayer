@@ -9,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
     title: DataTypes.STRING,
     cover: DataTypes.STRING,
     youtubeid: DataTypes.STRING,
+    pushfmurl: DataTypes.STRING,
     views: {
       type: DataTypes.INTEGER,
       allowNull: false,

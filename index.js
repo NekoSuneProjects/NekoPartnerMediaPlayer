@@ -17,6 +17,44 @@ const youtubeQueue = new Queue();
 const inQueueSet = new Set(); // Track what's already queued
 let isWorkerRunning = false;
 
+const LOG_DIR = path.join(__dirname, 'logs');
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+function writeCrashLog(type, err, extra = '') {
+  try {
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[:.]/g, '-');
+    const file = path.join(LOG_DIR, `crash-${stamp}.log`);
+    const body = [
+      `timestamp=${now.toISOString()}`,
+      `type=${type}`,
+      `pid=${process.pid}`,
+      `node=${process.version}`,
+      extra ? `extra=${extra}` : '',
+      `message=${err?.message || String(err)}`,
+      '',
+      (err?.stack || String(err))
+    ].filter(Boolean).join('\n');
+    fs.writeFileSync(file, body, 'utf8');
+    console.error(`[CRASH] Logged to ${file}`);
+  } catch (logErr) {
+    console.error('[CRASH] Failed to write crash log:', logErr);
+  }
+}
+
+process.on('uncaughtException', (err) => {
+  writeCrashLog('uncaughtException', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  writeCrashLog('unhandledRejection', err);
+  process.exit(1);
+});
+
 const Bottleneck = require('bottleneck');
 
 const limiter = new Bottleneck({
@@ -53,6 +91,47 @@ app.use(session({
 }));
 
 const CONFIG_PATH = path.join(__dirname, 'config.json');
+
+function parseYouTubeId(input) {
+  const value = String(input || '').trim();
+  if (!value) return null;
+
+  // Plain YouTube ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(value)) return value;
+
+  // URL formats: youtube.com/watch?v=... and youtu.be/...
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+
+    if (host.includes('youtu.be')) {
+      const id = url.pathname.replace(/^\/+/, '').split('/')[0];
+      return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    }
+
+    if (host.includes('youtube.com')) {
+      const id = url.searchParams.get('v');
+      return /^[a-zA-Z0-9_-]{11}$/.test(id || '') ? id : null;
+    }
+  } catch (err) {
+    return null;
+  }
+
+  return null;
+}
+
+function normalizePushFmUrl(input) {
+  const value = String(input || '').trim();
+  if (!value) return null;
+
+  try {
+    const url = new URL(value);
+    if (!url.hostname.toLowerCase().includes('push.fm')) return null;
+    return url.toString();
+  } catch (err) {
+    return null;
+  }
+}
 
 function loadYtdlpNodes() {
   try {
@@ -92,8 +171,13 @@ function buildInfoUrls(nodeUrl, youtubeUrl) {
 
 // Helper: Try YTDLP nodes in order and parse stats
 async function fetchYouTubeStats(youtubeid) {
+  const normalizedId = parseYouTubeId(youtubeid);
+  if (!normalizedId) {
+    return { views: 0, likes: 0 };
+  }
+
   const nodes = loadYtdlpNodes();
-  const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeid}`;
+  const youtubeUrl = `https://www.youtube.com/watch?v=${normalizedId}`;
 
   if (!nodes.length) {
     console.error('[YTDLP] No nodes configured. Add ytdlpnode[] in config.json or set YTDLP_API.');
@@ -138,7 +222,7 @@ async function fetchYouTubeStats(youtubeid) {
     }
   }
 
-  console.error(`[YTDLP] All nodes failed for ${youtubeid}`);
+  console.error(`[YTDLP] All nodes failed for ${normalizedId}`);
   return { views: 0, likes: 0 };
 }
 
@@ -149,9 +233,14 @@ async function enqueueOutdatedSongs() {
     });
 
     for (const song of songs) {
-        if (!inQueueSet.has(song.youtubeid)) {
-            youtubeQueue.enqueue(song.youtubeid);
-            inQueueSet.add(song.youtubeid);
+        const normalizedId = parseYouTubeId(song.youtubeid);
+        if (!normalizedId) {
+            continue;
+        }
+
+        if (!inQueueSet.has(normalizedId)) {
+            youtubeQueue.enqueue(normalizedId);
+            inQueueSet.add(normalizedId);
             console.log(`[QUEUE] Enqueued ${song.youtubeid}`);
         }
     }
@@ -306,7 +395,7 @@ app.post('/login', async (req, res) => {
 });
 
 app.post('/user/add-song', isAuthenticated, async (req, res) => {
-  const { Artist, title, cover, youtubeid, playlist } = req.body;
+  const { Artist, title, cover, youtubeid, pushfmurl, playlist } = req.body;
 
   try {
     const playlistRecord = await Playlist.findOne({ where: { name: playlist } });
@@ -314,11 +403,21 @@ app.post('/user/add-song', isAuthenticated, async (req, res) => {
       return res.status(400).send('Playlist not found');
     }
 
+    const normalizedYouTubeId = parseYouTubeId(youtubeid);
+    if (!normalizedYouTubeId) {
+      return res.status(400).send('Valid YouTube ID or URL is required');
+    }
+    const normalizedPushFmUrl = normalizePushFmUrl(pushfmurl);
+    if (String(pushfmurl || '').trim() && !normalizedPushFmUrl) {
+      return res.status(400).send('Push.fm URL is invalid');
+    }
+
     await Song.create({
       Artist,
       title,
       cover,
-      youtubeid,
+      youtubeid: normalizedYouTubeId,
+      pushfmurl: normalizedPushFmUrl,
       playlistId: playlistRecord.id
     });
 
@@ -419,6 +518,9 @@ app.get('/api/playlists', async (req, res) => {
         name: playlist.name,
         cover: playlist.cover,
         Songs: playlist.Songs.map(song => ({
+            sourceType: 'youtube',
+            sourceUrl: `https://www.youtube.com/watch?v=${song.youtubeid}`,
+            pushfmurl: song.pushfmurl || null,
             Artist: song.Artist,
             title: song.title,
             cover: song.cover,
@@ -489,9 +591,24 @@ app.post('/admin/reset-user-password', isAuthenticated, isAdmin, async (req, res
   }
 });
 
+async function ensureSongSchema() {
+  const queryInterface = sequelize.getQueryInterface();
+  const tableName = Song.getTableName();
+  const columns = await queryInterface.describeTable(tableName);
+
+  if (!columns.pushfmurl) {
+    await queryInterface.addColumn(tableName, 'pushfmurl', {
+      type: DataTypes.STRING,
+      allowNull: true
+    });
+    console.log('[DB] Added Songs.pushfmurl column');
+  }
+}
+
 // First-time setup default admin
 (async () => {
     await sequelize.sync();
+    await ensureSongSchema();
     const existing = await User.findOne({ where: { username: 'admin' } });
     if (!existing) {
         const passwordHash = await bcrypt.hash('admin', 10);
@@ -499,6 +616,12 @@ app.post('/admin/reset-user-password', isAuthenticated, isAdmin, async (req, res
         console.log('Default admin user created: admin/admin');
     }
 })();
+
+// Catch request/route errors and log them
+app.use((err, req, res, next) => {
+    writeCrashLog('expressError', err, `${req.method} ${req.originalUrl}`);
+    res.status(500).send('Internal Server Error');
+});
 
 // Start
 app.listen(PORT, () => {
