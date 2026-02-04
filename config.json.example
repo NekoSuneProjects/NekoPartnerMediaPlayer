@@ -1,0 +1,12 @@
+{
+  "ytdlpnode": [
+    {
+      "url": "https://dl.ballisticok.xyz",
+      "apikey": "your_api_key_here"
+    },
+    {
+      "url": "https://backup-node.example.com",
+      "apikey": ""
+    }
+  ]
+}

@@ -4,6 +4,7 @@ const session = require('express-session');
 const Queue = require('queue-fifo');
 const Redis = require('ioredis');
 const { Sequelize, Op, DataTypes } = require('sequelize');
+const fs = require('fs');
 const path = require('path');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
@@ -51,32 +52,94 @@ app.use(session({
     saveUninitialized: false
 }));
 
-// Helper: Run youtube-dl-exec and parse stats
-async function fetchYouTubeStats(youtubeid) {
-  const infoUrl = `${process.env.YTDLP_API}/info?url=${encodeURIComponent(
-    `https://www.youtube.com/watch?v=${youtubeid}`
-  )}`;
+const CONFIG_PATH = path.join(__dirname, 'config.json');
 
+function loadYtdlpNodes() {
   try {
-    const res = await fetch(infoUrl, { headers: { accept: "application/json" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status} from /info`);
-
-    const data = await res.json();
-
-    // Try common field names, fall back to nested shapes if your API wraps them
-    const views =
-      data.view_count ?? data.views ?? data.stats?.views ?? null;
-    const likes =
-      data.like_count ?? data.likes ?? data.stats?.likes ?? null;
-
-    return {
-      views: views != null ? String(views) : 0,
-      likes: likes != null ? String(likes) : 0,
-    };
+    if (fs.existsSync(CONFIG_PATH)) {
+      const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      if (Array.isArray(config.ytdlpnode)) {
+        return config.ytdlpnode;
+      }
+    }
   } catch (err) {
-    console.error(`GET /info failed for ${youtubeid}:`, err);
+    console.error('[YTDLP] Failed to read config.json:', err.message);
+  }
+
+  if (process.env.YTDLP_API) {
+    return [{
+      url: process.env.YTDLP_API,
+      apikey: process.env.YTDLP_API_KEY || ''
+    }];
+  }
+
+  return [];
+}
+
+function buildInfoUrls(nodeUrl, youtubeUrl) {
+  const normalized = String(nodeUrl || '').trim().replace(/\/+$/, '');
+  if (!normalized) return [];
+
+  if (/\/api\/info$/i.test(normalized) || /\/info$/i.test(normalized)) {
+    return [`${normalized}?cache=1&url=${encodeURIComponent(youtubeUrl)}`];
+  }
+
+  return [
+    `${normalized}/api/info?cache=1&url=${encodeURIComponent(youtubeUrl)}`,
+    `${normalized}/info?cache=1&url=${encodeURIComponent(youtubeUrl)}`
+  ];
+}
+
+// Helper: Try YTDLP nodes in order and parse stats
+async function fetchYouTubeStats(youtubeid) {
+  const nodes = loadYtdlpNodes();
+  const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeid}`;
+
+  if (!nodes.length) {
+    console.error('[YTDLP] No nodes configured. Add ytdlpnode[] in config.json or set YTDLP_API.');
     return { views: 0, likes: 0 };
   }
+
+  for (const node of nodes) {
+    const urls = buildInfoUrls(node?.url, youtubeUrl);
+    const apikey = String(node?.apikey || '').trim();
+
+    for (const infoUrl of urls) {
+      try {
+        const headers = { accept: 'application/json' };
+        if (apikey) headers.authorization = `Bearer ${apikey}`;
+
+        const res = await fetch(infoUrl, {
+          method: 'GET',
+          headers,
+          redirect: 'follow'
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const raw = await res.text();
+        let data;
+        try {
+          data = JSON.parse(raw);
+        } catch (parseErr) {
+          throw new Error('Invalid JSON response');
+        }
+
+        const views = data.view_count ?? data.views ?? data.stats?.views ?? null;
+        const likes = data.like_count ?? data.likes ?? data.stats?.likes ?? null;
+
+        return {
+          views: views != null ? String(views) : 0,
+          likes: likes != null ? String(likes) : 0,
+        };
+      } catch (err) {
+        console.error(`[YTDLP] Node request failed (${infoUrl}):`, err.message);
+      }
+    }
+  }
+
+  console.error(`[YTDLP] All nodes failed for ${youtubeid}`);
+  return { views: 0, likes: 0 };
 }
 
 async function enqueueOutdatedSongs() {
