@@ -16,6 +16,7 @@ const COOLDOWN_MS = 30 * 1000; // 30 seconds between updates
 const youtubeQueue = new Queue();
 const inQueueSet = new Set(); // Track what's already queued
 let isWorkerRunning = false;
+let dbReady = false;
 
 const LOG_DIR = path.join(__dirname, 'logs');
 if (!fs.existsSync(LOG_DIR)) {
@@ -46,13 +47,18 @@ function writeCrashLog(type, err, extra = '') {
 
 process.on('uncaughtException', (err) => {
   writeCrashLog('uncaughtException', err);
-  process.exit(1);
+  // Keeping the process running after an uncaught exception can leave it in a bad state.
+  // Default behavior remains "exit", but allow opting out when running without a supervisor.
+  if (String(process.env.EXIT_ON_UNCAUGHT_EXCEPTION || 'true').toLowerCase() === 'true') {
+    process.exit(1);
+  }
 });
 
 process.on('unhandledRejection', (reason) => {
   const err = reason instanceof Error ? reason : new Error(String(reason));
   writeCrashLog('unhandledRejection', err);
-  process.exit(1);
+  // Many unhandled rejections here are transient DB connection issues during startup.
+  // Do not crash the whole app; log and keep running.
 });
 
 const Bottleneck = require('bottleneck');
@@ -76,6 +82,49 @@ const redis = new Redis({
     db: Number(process.env.REDIS_DB || 0)
 });
 
+function parseCsvList(value) {
+  return String(value || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function apiCorsMiddleware(req, res, next) {
+  const allowOriginsRaw = process.env.CORS_ALLOW_ORIGINS || '*';
+  const allowCredentials = String(process.env.CORS_ALLOW_CREDENTIALS || 'false').toLowerCase() === 'true';
+
+  const origin = req.headers.origin;
+  let allowOriginHeader = '*';
+
+  if (allowOriginsRaw !== '*') {
+    const allowList = parseCsvList(allowOriginsRaw);
+    if (origin && allowList.includes(origin)) {
+      allowOriginHeader = origin; // reflect allowed origin
+      res.setHeader('Vary', 'Origin');
+    } else {
+      // Not allowed; omit CORS headers so browser blocks it.
+      if (req.method === 'OPTIONS') return res.sendStatus(204);
+      return next();
+    }
+  } else if (allowCredentials && origin) {
+    // Credentials + wildcard is invalid; reflect request origin instead.
+    allowOriginHeader = origin;
+    res.setHeader('Vary', 'Origin');
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', allowOriginHeader);
+  if (allowCredentials) res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    req.headers['access-control-request-headers'] || 'Content-Type, Authorization'
+  );
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+}
+
 // Middleware
 app.use(express.static('public'));
 
@@ -89,6 +138,9 @@ app.use(session({
     resave: false,
     saveUninitialized: false
 }));
+
+// Allow cross-domain access to the API routes (fixes CORS errors in browsers).
+app.use('/api', apiCorsMiddleware);
 
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
@@ -507,6 +559,9 @@ app.post('/user/update-password', isAuthenticated, async (req, res) => {
 
 // API Endpoint
 app.get('/api/playlists', async (req, res) => {
+    if (!dbReady) {
+        return res.status(503).json({ error: 'Database not ready' });
+    }
     const playlists = await Playlist.findAll({
         include: {
             model: Song,
@@ -605,17 +660,41 @@ async function ensureSongSchema() {
   }
 }
 
-// First-time setup default admin
-(async () => {
-    await sequelize.sync();
-    await ensureSongSchema();
-    const existing = await User.findOne({ where: { username: 'admin' } });
-    if (!existing) {
-        const passwordHash = await bcrypt.hash('admin', 10);
-        await User.create({ username: 'admin', passwordHash });
-        console.log('Default admin user created: admin/admin');
+async function initDatabaseWithRetry() {
+    const baseDelayMs = Number(process.env.DB_RETRY_BASE_DELAY_MS || 1000);
+    const maxDelayMs = Number(process.env.DB_RETRY_MAX_DELAY_MS || 30000);
+
+    let attempt = 0;
+    while (true) {
+        attempt += 1;
+        try {
+            await sequelize.authenticate();
+            await sequelize.sync();
+            await ensureSongSchema();
+
+            const existing = await User.findOne({ where: { username: 'admin' } });
+            if (!existing) {
+                const passwordHash = await bcrypt.hash('admin', 10);
+                await User.create({ username: 'admin', passwordHash });
+                console.log('Default admin user created: admin/admin');
+            }
+
+            dbReady = true;
+            console.log('[DB] Ready');
+            return;
+        } catch (err) {
+            dbReady = false;
+            writeCrashLog('dbInitError', err, `attempt=${attempt}`);
+            console.error(`[DB] Init failed (attempt ${attempt}):`, err?.message || err);
+
+            const delay = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, Math.min(attempt - 1, 10)));
+            await sleep(delay);
+        }
     }
-})();
+}
+
+// Initialize DB in background; do not crash the web server if DB is temporarily unavailable.
+initDatabaseWithRetry();
 
 // Catch request/route errors and log them
 app.use((err, req, res, next) => {
