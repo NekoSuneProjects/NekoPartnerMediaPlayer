@@ -70,6 +70,8 @@
     </div>
 
     <script>
+        const API_PLAYLISTS_URL = '/api/playlists';
+
         // Sample playlist data as fallback
         const fallbackPlaylists = [
             {
@@ -104,7 +106,7 @@
             if (latestMetadataCache) return latestMetadataCache; // Already fetched
 
             try {
-                const res = await fetch('https://mediaplayer.nekosunevr.co.uk/api/playlists');
+                const res = await fetch(API_PLAYLISTS_URL);
                 if (!res.ok) throw new Error('Failed to fetch playlists metadata');
                 const data = await res.json();
                 latestMetadataCache = {};
@@ -136,6 +138,96 @@
                 views: 0,
                 likes: 0
             };
+        }
+
+        function extractYouTubeId(input) {
+            const value = String(input || '').trim();
+            if (!value) return null;
+
+            if (/^[a-zA-Z0-9_-]{11}$/.test(value)) return value;
+
+            try {
+                const url = new URL(value);
+                const host = url.hostname.toLowerCase();
+
+                if (host.includes('youtu.be')) {
+                    const id = url.pathname.replace(/^\/+/, '').split('/')[0];
+                    return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+                }
+
+                if (host.includes('youtube.com')) {
+                    const id = url.searchParams.get('v');
+                    return /^[a-zA-Z0-9_-]{11}$/.test(id || '') ? id : null;
+                }
+            } catch (err) {
+                return null;
+            }
+
+            return null;
+        }
+
+        function toCanonicalYouTubeUrl(input) {
+            const id = extractYouTubeId(input);
+            if (!id) return null;
+            return `https://www.youtube.com/watch?v=${id}`;
+        }
+
+        async function fetchOembedMeta(videoId) {
+            try {
+                const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+                if (!res.ok) return null;
+                const data = await res.json();
+                return {
+                    title: data.title || 'Unknown',
+                    artist: data.author_name || 'Unknown',
+                    cover: data.thumbnail_url || '',
+                };
+            } catch (err) {
+                return null;
+            }
+        }
+
+        let shortcutRequested = false;
+        let pendingShortcutCanonicalUrl = null;
+        (function initShortcutFromQuery() {
+            const raw = new URLSearchParams(window.location.search).get('url');
+            if (!raw) return;
+
+            const canonical = toCanonicalYouTubeUrl(raw);
+            if (!canonical) return;
+
+            shortcutRequested = true;
+            pendingShortcutCanonicalUrl = canonical;
+
+            // Clean URL back to /mediaplayer (keep hash if any)
+            const clean = window.location.pathname + (window.location.hash || '');
+            window.history.replaceState({}, document.title, clean);
+        })();
+
+        function applyShortcutIfPresent() {
+            if (!pendingShortcutCanonicalUrl) return false;
+
+            const targetCanonical = pendingShortcutCanonicalUrl;
+
+            // Only allow playing songs that exist in /api/playlists and match by sourceUrl.
+            for (const playlist of (playlists || [])) {
+                for (const song of (playlist.Songs || [])) {
+                    const songCanonical = toCanonicalYouTubeUrl(song.sourceUrl || song.youtubeid);
+                    if (songCanonical && songCanonical === targetCanonical) {
+                        // Restrict playback to only this one matched song.
+                        currentPlaylist = [{ ...song }];
+                        currentTrackIndex = 0;
+                        updateSongList();
+                        if (player && isPlayerReady) loadTrack(0);
+                        pendingShortcutCanonicalUrl = null;
+                        return true;
+                    }
+                }
+            }
+
+            // Not found in playlists: do not play anything.
+            pendingShortcutCanonicalUrl = null;
+            return true;
         }
 
 
@@ -238,8 +330,7 @@
         async function fetchPlaylists() {
             try {
                 // Try to fetch from API
-                const apiUrl = 'https://mediaplayer.nekosunevr.co.uk/api/playlists';
-                const response = await fetch(apiUrl);
+                const response = await fetch(API_PLAYLISTS_URL);
                 if (!response.ok) {
                     throw new Error(`API request failed: ${response.status} ${response.statusText}`);
                 }
@@ -264,6 +355,21 @@
 
             console.log('Fetched playlists from localStorage:', JSON.stringify(playlists, null, 2));
             updatePlaylistSidebar();
+
+            // If a /mediaplayer?url=... shortcut was requested:
+            // - play ONLY if it matches a song in /api/playlists (by sourceUrl)
+            // - otherwise don't auto-play anything
+            if (shortcutRequested) {
+                const played = applyShortcutIfPresent();
+                if (!played || currentPlaylist.length === 0) {
+                    const errorMessage = document.getElementById('error-message');
+                    errorMessage.textContent = 'This link is not in the playlists.';
+                    errorMessage.classList.remove('hidden');
+                    setTimeout(() => errorMessage.classList.add('hidden'), 4000);
+                }
+                setTimeout(updateMetadataInBackground, 0);
+                return;
+            }
 
             if (playlists.length > 0 && currentPlaylist.length === 0) {
                 currentPlaylist = [...playlists[0].Songs];
