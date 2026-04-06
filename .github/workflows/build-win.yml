@@ -21,22 +21,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 21
           cache: npm
-
-      # ✅ FIX node-gyp (Python 3.10)
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
 
       # ✅ Clean install (prevents Windows issues)
       - name: Install Dependencies
         shell: pwsh
         run: |
-          npm cache clean --force
-          if (Test-Path node_modules) { Remove-Item node_modules -Recurse -Force }
-          if (Test-Path package-lock.json) { Remove-Item package-lock.json -Force }
           npm install
 
       # ✅ Get version from package.json
@@ -44,7 +35,8 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          echo "VERSION=$version" >> $env:GITHUB_ENV
+          echo "BASE_VERSION=$version" >> $env:GITHUB_ENV
+          
      # ✅ Determine BETA or RELEASE
       - name: Determine Channel + Version
         shell: pwsh
